@@ -54,6 +54,10 @@ function broadcastBotsStatus() {
   for (const name of Object.keys(bots)) {
     const status = getBotStatus(bots[name], cfg);
     status.allowWebChat = cfg.web && cfg.web.allowWebChat;
+    // Add the actual Minecraft username
+    if (bots[name].username) {
+      status.botUsername = bots[name].username;
+    }
     statuses[name] = status;
   }
   io.emit('bots', statuses);
@@ -82,7 +86,7 @@ function createBot(accountConfig) {
   // commands like /spawn and /lobby. We then broadcast status to
   // update the web dashboard.
   bot.once('spawn', () => {
-    logger.success(`Bot ${accountConfig.username} spawned`);
+    logger.success(`Bot ${bot.username} spawned`);
     const cfg = getConfig();
     if (cfg.plugins && cfg.plugins.antiAfk) antiAfk(bot);
     if (cfg.plugins && cfg.plugins.randomMove) randomMove(bot);
@@ -104,17 +108,22 @@ function createBot(accountConfig) {
   bot.on('death', () => {
     const cfg = getConfig();
     if (cfg.plugins && cfg.plugins.autoRespawn) {
-      logger.info(`Bot ${accountConfig.username} died, respawning…`);
+      logger.info(`Bot ${bot.username} died, respawning…`);
       setTimeout(() => bot.respawn(), 1500);
     }
   });
 
   // Forward all chat messages to the web clients. We include
-  // accountConfig.username so the client can distinguish between
-  // multiple bots.
+  // accountConfig.username (email) so the client can distinguish between
+  // multiple bots. Also include botUsername (Minecraft username) and chatUsername.
   bot.on('chat', (username, message) => {
     if (getConfig().web && getConfig().web.enabled) {
-      io.emit('chat', { username: accountConfig.username, message });
+      io.emit('chat', { 
+        username: accountConfig.username,
+        botUsername: bot.username,
+        chatUsername: username,
+        message 
+      });
     }
   });
 

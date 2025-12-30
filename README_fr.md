@@ -61,7 +61,7 @@ Modifiez `config/config.json` pour configurer vos comptes et préférences. Exem
 }
 ```
 
-- **accounts** : liste des comptes bots. Utilisez votre e‑mail Microsoft et mettez `"auth": "microsoft"`.
+- **accounts** : liste des comptes bots. Utilisez votre e‑mail Microsoft et mettez `"auth": "microsoft"`. Le tableau de bord web, les logs de la console et l'embed Discord afficheront le pseudo Minecraft réel de chaque bot.
 - **plugins** : activez ou désactivez les comportements individuels.
 - **web.enabled** : activez ou désactivez le tableau de bord web.
 - **web.port** : port pour le tableau de bord.

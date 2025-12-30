@@ -61,7 +61,7 @@ Edit `config/config.json` to set up your accounts and preferences. Example:
 }
 ```
 
-- **accounts**: list of bot accounts. Use your Microsoft email and set `"auth": "microsoft"`.
+- **accounts**: list of bot accounts. Use your Microsoft email and set `"auth": "microsoft"`. The web dashboard, console logs and Discord embed will display the actual Minecraft username of each bot.
 - **plugins**: toggle individual behaviours.
 - **web.enabled**: enable or disable the web dashboard.
 - **web.port**: port for the dashboard.

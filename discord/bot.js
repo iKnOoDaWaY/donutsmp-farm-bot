@@ -117,7 +117,10 @@ function buildEmbed(bots, cfg) {
   embed.setTitle('🟢 Minecraft Bots Status');
 
   for (const name of Object.keys(bots)) {
-    const status = getBotStatus(bots[name], cfg);
+    const bot = bots[name];
+    const status = getBotStatus(bot, cfg);
+    const botUsername = bot.username || name;
+    
     const lines = [];
     lines.push(`Online: ${status.online ? 'Yes' : 'No'}`);
     if (status.online) {
@@ -127,11 +130,11 @@ function buildEmbed(bots, cfg) {
       lines.push(`Dimension: ${status.dimension}`);
       lines.push(`Position: ${status.position}`);
     }
-    embed.addFields({ name: `Bot: ${name}`, value: lines.join('\n'), inline: false });
+    embed.addFields({ name: `Bot: ${botUsername}`, value: lines.join('\n'), inline: false });
 
     if (status.scoreboard) {
       embed.addFields({
-        name: `📊 Scoreboard — ${name} (${status.scoreboard.title})`,
+        name: `📊 Scoreboard — ${botUsername} (${status.scoreboard.title})`,
         value: status.scoreboard.lines.join('\n') || '—',
         inline: false
       });

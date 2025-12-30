@@ -36,13 +36,13 @@ socket.on('bots', data => {
 // Append incoming chat messages to the appropriate log and, if
 // currently selected, to the visible chat area. All chat events
 // carry the name of the bot they originated from.
-socket.on('chat', ({ username, message }) => {
+socket.on('chat', ({ username, botUsername, chatUsername, message }) => {
   if (!messageLogs[username]) {
     messageLogs[username] = [];
   }
-  messageLogs[username].push({ username, message });
+  messageLogs[username].push({ botUsername, chatUsername, message });
   if (username === selectedBot) {
-    appendChat(username, message);
+    appendChat(botUsername, chatUsername, message);
   }
 });
 
@@ -78,7 +78,7 @@ function updateSelectOptions() {
   for (const [id, status] of Object.entries(botsStatus)) {
     const option = document.createElement('option');
     option.value = id;
-    option.textContent = status.username || id;
+    option.textContent = status.botUsername || status.username || id;
     botSelect.appendChild(option);
   }
   if (selectedBot && botsStatus[selectedBot]) {
@@ -101,8 +101,8 @@ function updateUI() {
     return;
   }
   const status = botsStatus[selectedBot];
-  usernameEl.textContent = status.username || selectedBot;
-  skinEl.src = `https://mc-heads.net/avatar/${status.username || selectedBot}/64`;
+  usernameEl.textContent = status.botUsername || status.username || selectedBot;
+  skinEl.src = `https://mc-heads.net/avatar/${status.botUsername || status.username || selectedBot}/64`;
   if (status.online) {
     statusIndicator.classList.remove('offline');
     statusIndicator.classList.add('online');
@@ -129,7 +129,7 @@ function renderChat() {
   const logs = messageLogs[selectedBot] || [];
   for (const entry of logs) {
     const div = document.createElement('div');
-    div.textContent = `<${entry.username}> ${entry.message}`;
+    div.textContent = `<${entry.botUsername}> | ${entry.chatUsername} : ${entry.message}`;
     chatEl.appendChild(div);
   }
   chatEl.scrollTop = chatEl.scrollHeight;
@@ -140,10 +140,10 @@ function renderChat() {
  * auto‑scrolling if the user is already at the bottom of the
  * chat.
  */
-function appendChat(username, message) {
+function appendChat(botUsername, chatUsername, message) {
   const shouldScroll = chatEl.scrollTop + chatEl.clientHeight >= chatEl.scrollHeight - 50;
   const div = document.createElement('div');
-  div.textContent = `<${username}> ${message}`;
+  div.textContent = `<${botUsername}> | ${chatUsername} : ${message}`;
   chatEl.appendChild(div);
   if (shouldScroll) {
     chatEl.scrollTop = chatEl.scrollHeight;
