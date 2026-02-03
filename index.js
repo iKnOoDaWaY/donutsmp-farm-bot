@@ -36,7 +36,7 @@ if (getConfig().web && getConfig().web.enabled) {
 }
 
 /**
- * Broadcast the status of all bots to connected web clients (with live stats).
+ * Broadcast live stats to web clients
  */
 function broadcastBotsStatus() {
   const cfg = getConfig();
@@ -100,7 +100,6 @@ function createBot(accountConfig) {
   // Shard parser (ignores small numbers from AFK messages)
   bot.on('message', (jsonMsg) => {
     const text = jsonMsg.toString().trim().toLowerCase();
-    // console.log('[CHAT RAW]', text); // ← comment out to reduce spam
 
     // Priority 1: Formatted shards
     const formattedRegex = /(?:your\s*shards\s*[:=-]\s*|shards\s*[:=-]\s*|\b)([\d.]+)([kmb]?)/i;
@@ -240,41 +239,57 @@ function startBots() {
   });
 }
 
-// Socket.io
+// Socket.io connection handling
 io.on('connection', socket => {
   broadcastBotsStatus();
 
-socket.on('maintenance', (data) => {
-  const { action, bot } = data;
-  // Call your maintenance function or directly handle
-  let result = '';
-  Object.entries(bots).forEach(([name, b]) => {
-    if (bot === 'all' || name === bot) {
-      if (action === 'disconnect') {
-        if (b?.entity) {
-          b.quit('Maintenance disconnect from web');
-          result += `${name} disconnected\n`;
+  // Handle per-bot or global maintenance (disconnect/reconnect)
+  socket.on('maintenance', (data) => {
+    const { action, bot: target } = data;
+    let result = '';
+
+    Object.entries(bots).forEach(([name, bot]) => {
+      if (target === 'all' || name === target) {
+        if (action === 'disconnect') {
+          if (bot?.entity) {
+            bot.quit('Maintenance disconnect from web');
+            result += `${name}: Disconnected\n`;
+          } else {
+            result += `${name}: Already offline\n`;
+          }
+        } else if (action === 'reconnect') {
+          if (bot?.entity) {
+            bot.quit('Maintenance reconnect from web');
+          }
+          // autoReconnect plugin will handle restart
+          result += `${name}: Reconnect triggered\n`;
         }
-      } else if (action === 'reconnect') {
-        if (b?.entity) {
-          b.quit('Maintenance reconnect from web');
-        }
-        // autoReconnect will handle restart
-        result += `${name} reconnect triggered\n`;
       }
-    }
+    });
+
+    socket.emit('maintenance-result', { message: result || 'No matching bots affected' });
   });
-  socket.emit('maintenance-result', { message: result || 'No action taken' });
-});
+
+  // Send chat message to specific bot or all
   socket.on('sendMessage', data => {
     const cfg = getConfig();
     if (!cfg.web || !cfg.web.allowWebChat) return;
     if (!data || typeof data.message !== 'string' || data.message.trim().length === 0) return;
-    const targetName = data.username || Object.keys(bots)[0];
-    const targetBot = bots[targetName];
-    if (!targetBot || !targetBot.player) return;
-    if (data.message.length > 100) return;
-    targetBot.chat(data.message.trim());
+
+    const targetName = data.username || null; // null = all bots
+    const message = data.message.trim();
+
+    if (targetName) {
+      const targetBot = bots[targetName];
+      if (targetBot && targetBot.player) {
+        targetBot.chat(message);
+      }
+    } else {
+      // Send to all bots
+      Object.values(bots).forEach(bot => {
+        if (bot?.player) bot.chat(message);
+      });
+    }
   });
 });
 
