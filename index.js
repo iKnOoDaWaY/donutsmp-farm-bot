@@ -45,15 +45,20 @@ function broadcastBotsStatus() {
   const statuses = {};
   for (const name of Object.keys(bots)) {
     const bot = bots[name];
-    const status = getBotStatus(bot, cfg);
+    const status = getBotStatus(bot, cfg) || {};
 
     statuses[name] = {
-      ...status,
       configUsername: name,
       minecraftUsername: bot?.username || 'Offline',
       online: !!bot?.entity,
+      statusColor: bot?.entity ? '#00ff00' : '#ff0000',
       shards: bot.shards ?? 'Unknown',
-      uptime: bot?.entity ? Math.floor((Date.now() - (bot.sessionStart || Date.now())) / 1000) : 0
+      uptime: bot?.entity ? Math.floor((Date.now() - (bot.sessionStart || Date.now())) / 1000) : 0,
+      health: bot?.health ?? 'N/A',
+      food: bot?.food ?? 'N/A',
+      dimension: bot?.game?.dimension ?? 'N/A',
+      position: bot?.entity?.position ? `${Math.floor(bot.entity.position.x)}, ${Math.floor(bot.entity.position.y)}, ${Math.floor(bot.entity.position.z)}` : 'N/A',
+      proxy: bot?.options?.agent ? 'Yes' : 'No'
     };
   }
 
@@ -239,6 +244,28 @@ function startBots() {
 io.on('connection', socket => {
   broadcastBotsStatus();
 
+socket.on('maintenance', (data) => {
+  const { action, bot } = data;
+  // Call your maintenance function or directly handle
+  let result = '';
+  Object.entries(bots).forEach(([name, b]) => {
+    if (bot === 'all' || name === bot) {
+      if (action === 'disconnect') {
+        if (b?.entity) {
+          b.quit('Maintenance disconnect from web');
+          result += `${name} disconnected\n`;
+        }
+      } else if (action === 'reconnect') {
+        if (b?.entity) {
+          b.quit('Maintenance reconnect from web');
+        }
+        // autoReconnect will handle restart
+        result += `${name} reconnect triggered\n`;
+      }
+    }
+  });
+  socket.emit('maintenance-result', { message: result || 'No action taken' });
+});
   socket.on('sendMessage', data => {
     const cfg = getConfig();
     if (!cfg.web || !cfg.web.allowWebChat) return;

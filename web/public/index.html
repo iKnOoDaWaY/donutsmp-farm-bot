@@ -1,27 +1,248 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta http-equiv="X-UA-Compatible" content="IE=edge">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Minecraft Bots Dashboard</title>
-  <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DonutSMP Farm Bot Dashboard</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #0d1117;
+      color: #c9d1d9;
+      margin: 0;
+      padding: 20px;
+    }
+    h1, h2 {
+      color: #58a6ff;
+    }
+    #container {
+      display: flex;
+      gap: 30px;
+      flex-wrap: wrap;
+    }
+    #bot-grid {
+      flex: 3;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 20px;
+    }
+    #chat-section {
+      flex: 1;
+      min-width: 340px;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 10px;
+      padding: 20px;
+      height: fit-content;
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .bot-card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 10px;
+      padding: 20px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    }
+    .bot-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .status-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+    .online { background: #00ff00; }
+    .offline { background: #ff0000; }
+    .stat-line {
+      margin: 6px 0;
+      font-size: 0.95em;
+    }
+    .label { color: #8b949e; }
+    .control-buttons {
+      margin-top: 12px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .control-btn {
+      padding: 8px 12px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9em;
+    }
+    .disconnect { background: #d73a49; color: white; }
+    .reconnect { background: #238636; color: white; }
+    .send-chat { background: #444d56; color: white; }
+    .chat-per-bot {
+      margin-top: 10px;
+      display: flex;
+      gap: 6px;
+    }
+    .chat-input-small {
+      flex: 1;
+      padding: 6px;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      background: #0d1117;
+      color: #c9d1d9;
+    }
+    #chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      margin-bottom: 10px;
+      padding: 10px;
+      background: #0d1117;
+      border-radius: 6px;
+      max-height: 400px;
+    }
+    .chat-msg {
+      margin: 6px 0;
+      padding: 8px;
+      border-radius: 6px;
+    }
+    .chat-msg.system {
+      background: #21262d;
+      font-style: italic;
+      color: #8b949e;
+    }
+    #global-chat-form {
+      display: flex;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    #global-chat-input {
+      flex: 1;
+      padding: 10px;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      background: #0d1117;
+      color: #c9d1d9;
+    }
+  </style>
 </head>
 <body>
-  <div class="header">
-    <label for="botSelect">Select Bot:</label>
-    <select id="botSelect"></select>
-    <div class="card">
-      <img id="skin" alt="skin" />
-      <h2 id="username">Loading…</h2>
-      <span id="status-indicator" class="indicator offline"></span>
-    </div>
+
+<h1>DonutSMP Farm Bots - Live Dashboard</h1>
+
+<div id="container">
+  <!-- Bot stats grid with controls -->
+  <div id="bot-grid"></div>
+
+  <!-- Global chat section -->
+  <div id="chat-section">
+    <h2>Global Chat (all bots)</h2>
+    <div id="chat-messages"></div>
+    <form id="global-chat-form">
+      <input type="text" id="global-chat-input" placeholder="Type message to send to all bots..." autocomplete="off" />
+      <button type="submit">Send to All</button>
+    </form>
   </div>
-  <div class="chat-container">
-    <div class="chat" id="chat"></div>
-    <input id="input" placeholder="Message…" autocomplete="off" />
-  </div>
-  <script src="/socket.io/socket.io.js"></script>
-  <script src="app.js"></script>
+</div>
+
+<script>
+  const socket = io();
+
+  socket.on('connect', () => {
+    console.log('Connected to socket.io');
+  });
+
+  // Live bot stats + controls
+  socket.on('bots', (botsData) => {
+    const grid = document.getElementById('bot-grid');
+    grid.innerHTML = '';
+
+    Object.entries(botsData).forEach(([configName, bot]) => {
+      const card = document.createElement('div');
+      card.className = 'bot-card';
+
+      card.innerHTML = `
+        <div class="bot-header">
+          <div class="status-dot ${bot.online ? 'online' : 'offline'}"></div>
+          <h3>${bot.minecraftUsername || configName}</h3>
+        </div>
+        <div class="stat-line"><span class="label">Config:</span> ${configName}</div>
+        <div class="stat-line"><span class="label">Status:</span> ${bot.online ? '🟢 Online' : '🔴 Offline'}</div>
+        <div class="stat-line"><span class="label">Shards:</span> ${bot.shards}</div>
+        <div class="stat-line"><span class="label">Uptime:</span> ${formatUptime(bot.uptime)}</div>
+        <div class="stat-line"><span class="label">Health:</span> ${bot.health}</div>
+        <div class="stat-line"><span class="label">Food:</span> ${bot.food}</div>
+        <div class="stat-line"><span class="label">Dimension:</span> ${bot.dimension}</div>
+        <div class="stat-line"><span class="label">Position:</span> ${bot.position}</div>
+        <div class="stat-line"><span class="label">Proxy:</span> ${bot.proxy}</div>
+
+        <div class="control-buttons">
+          <button class="control-btn disconnect" onclick="controlBot('${configName}', 'disconnect')">Disconnect</button>
+          <button class="control-btn reconnect" onclick="controlBot('${configName}', 'reconnect')">Reconnect</button>
+        </div>
+
+        <div class="chat-per-bot">
+          <input type="text" class="chat-input-small" id="chat-${configName}" placeholder="Message to ${bot.minecraftUsername || configName}" />
+          <button class="control-btn send-chat" onclick="sendChat('${configName}')">Send</button>
+        </div>
+      `;
+
+      grid.appendChild(card);
+    });
+  });
+
+  // Global chat display
+  socket.on('chat', (data) => {
+    const chatArea = document.getElementById('chat-messages');
+    const msgDiv = document.createElement('div');
+    msgDiv.className = 'chat-msg';
+
+    if (data.chatUsername === 'SYSTEM') {
+      msgDiv.classList.add('system');
+      msgDiv.textContent = `[${data.botUsername}] ${data.message}`;
+    } else {
+      msgDiv.textContent = `[${data.botUsername}] ${data.chatUsername}: ${data.message}`;
+    }
+
+    chatArea.appendChild(msgDiv);
+    chatArea.scrollTop = chatArea.scrollHeight;
+  });
+
+  // Global chat send
+  document.getElementById('global-chat-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const input = document.getElementById('global-chat-input');
+    const message = input.value.trim();
+    if (!message) return;
+
+    socket.emit('sendMessage', { message });
+    input.value = '';
+  });
+
+  // Per-bot control functions
+  function controlBot(botName, action) {
+    socket.emit('maintenance', { action, bot: botName });
+    alert(`Sent ${action} command for ${botName}`);
+  }
+
+  function sendChat(botName) {
+    const input = document.getElementById(`chat-${botName}`);
+    const message = input.value.trim();
+    if (!message) return;
+
+    socket.emit('sendMessage', { message, username: botName });
+    input.value = '';
+  }
+
+  function formatUptime(seconds) {
+    if (!seconds) return 'Offline';
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    return `${h > 0 ? h + 'h ' : ''}${m}m ${s}s`;
+  }
+</script>
+
 </body>
 </html>
