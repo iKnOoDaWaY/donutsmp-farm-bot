@@ -17,11 +17,7 @@ function getDimensionName(dim) {
 }
 
 /**
- * Read the sidebar scoreboard from a mineflayer bot. Some servers
- * customise the scoreboard packets so it may not always be
- * available. We return a simple structure of title and an array of
- * lines or null if no readable scoreboard is present.
- *
+ * Read a Minecraft scoreboard from a mineflayer bot.
  * @param {object} bot The mineflayer bot instance
  * @param {number} maxLines The maximum number of lines to return
  * @returns {object|null}
@@ -51,12 +47,7 @@ function readScoreboard(bot, maxLines = 10) {
 }
 
 /**
- * Construct a status object for the provided bot. If the bot is
- * offline or not fully spawned we set online to false and return
- * minimal info. Otherwise we derive health, food, dimension and
- * position from the bot's entity. Scoreboard data is returned if
- * available.
- *
+ * Construct a status object for the provided bot.
  * @param {object} bot The mineflayer bot instance
  * @param {object} config The loaded configuration
  */
@@ -67,11 +58,10 @@ function getBotStatus(bot, config) {
   const e = bot.entity;
   const scoreboard = readScoreboard(bot, config?.discord?.scoreboardMaxLines || 10);
   return {
-    username: bot.username,
     online: true,
     alive: e.health > 0,
     health: Math.round(e.health),
-    food: Math.round(e.food),
+    food: Math.round(bot.food),
     dimension: getDimensionName(bot.game.dimension),
     position: `${Math.floor(e.position.x)}, ${Math.floor(e.position.y)}, ${Math.floor(e.position.z)}`,
     scoreboard
