@@ -1,36 +1,43 @@
 const logger = require('../utils/logger');
 
 /**
- * Automatically sends /spawn on connection, but skips if already in AFK area.
- * Checks raw chat for "you teleported to the ᴀꜰᴋ" + number.
+ * Automatically sends /spawn on connection, but skips if already in an AFK area.
+ * Checks raw chat for messages containing "ᴀꜰᴋ" + number (e.g. "ᴀꜰᴋ 52")
  * @param {object} bot The mineflayer bot instance
  */
 module.exports = function autoLobby(bot) {
-  let alreadyInAfk = false;
+  let detectedAfk = false;
 
-  // Listen for AFK teleport message
+  // Pattern to match any AFK area teleport message
+  // Examples: "you teleported to the ᴀꜰᴋ 52", "ᴀꜰᴋ 1", "AFK 99", etc.
+  const afkPattern = /ᴀꜰᴋ\s*\d+|afk\s*\d+|the\s*ᴀꜰᴋ\s*\d+|afk\s*area/i;
+
+  // Listen for chat messages
   const afkListener = (jsonMsg) => {
     const text = jsonMsg.toString().toLowerCase();
-    if (text.includes('you teleported to the') && text.includes('ᴀꜰᴋ') && /\d/.test(text)) {
-      alreadyInAfk = true;
-      logger.info(`[AutoLobby] Detected AFK teleport: "${text}" → skipping /spawn`);
-      bot.off('message', afkListener); // Clean up
+
+    if (afkPattern.test(text)) {
+      detectedAfk = true;
+      logger.info(`[AutoLobby] Detected AFK area message: "${text}" → skipping /spawn`);
+      // Stop listening once confirmed
+      bot.off('message', afkListener);
     }
   };
 
+  // Start listening immediately after spawn
   bot.on('message', afkListener);
 
-  // Wait ~6 seconds for possible AFK message
+  // Wait 8 seconds — enough time for the server to send the message
   setTimeout(() => {
-    if (alreadyInAfk) {
-      logger.info('[AutoLobby] Already in AFK area — no /spawn needed');
+    if (detectedAfk) {
+      logger.info('[AutoLobby] Bot is already in AFK area — no /spawn needed');
     } else {
       const cmd = '/spawn';
-      logger.info(`[AutoLobby] No AFK message detected — sending ${cmd}`);
+      logger.info(`[AutoLobby] No AFK message detected after 8s — sending ${cmd}`);
       bot.chat(cmd);
     }
 
     // Cleanup listener
     bot.off('message', afkListener);
-  }, 6000);
+  }, 8000);
 };
