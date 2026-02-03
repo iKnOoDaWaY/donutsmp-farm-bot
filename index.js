@@ -85,7 +85,6 @@ function createBot(accountConfig) {
   }
 
   const bot = mineflayer.createBot(botOptions);
-
   bots[accountConfig.username] = bot;
 
   bot.shards = null; // Shard count storage
@@ -93,23 +92,19 @@ function createBot(accountConfig) {
   // Improved chat parser for shards (handles "your shards: 2.62k" and similar)
   bot.on('message', (jsonMsg) => {
     const text = jsonMsg.toString().trim().toLowerCase();
-
     // Debug: log every chat message (remove later if too noisy)
     console.log('[CHAT RAW]', text);
 
     // Priority 1: Catch formatted "your shards: 2.62k" / "shards : 2.62K" / etc.
     const formattedRegex = /(?:your\s*shards\s*[:=-]\s*|shards\s*[:=-]\s*|\b)([\d.]+)([kmb]?)/i;
     const formattedMatch = text.match(formattedRegex);
-
     if (formattedMatch && formattedMatch[1]) {
       let numStr = formattedMatch[1];
       let multiplier = 1;
-
       const suffix = formattedMatch[2].toLowerCase();
       if (suffix === 'k') multiplier = 1000;
       else if (suffix === 'm') multiplier = 1000000;
       else if (suffix === 'b') multiplier = 1000000000;
-
       const number = parseFloat(numStr);
       if (!isNaN(number)) {
         const final = Math.round(number * multiplier);
@@ -119,12 +114,12 @@ function createBot(accountConfig) {
       }
     }
 
-    // Priority 2: Fallback plain number only if no formatted match (skip very small numbers)
+    // Priority 2: Only fallback to plain number if no formatted match (stricter threshold)
     const plainMatch = text.match(/\b(\d+)\b/);
     if (plainMatch && plainMatch[1]) {
       const count = parseInt(plainMatch[1], 10);
-      // Ignore tiny numbers like "2" or "57" that are likely not the real balance
-      if (count >= 100 && count < 10000000) {
+      // Ignore anything under 1000 – shard balances are rarely that low
+      if (count >= 1000 && count < 10000000) {
         bot.shards = count;
         console.log(`[SHARDS UPDATE] Plain fallback: ${count} for ${bot.username || accountConfig.username}`);
       }
@@ -134,11 +129,9 @@ function createBot(accountConfig) {
   bot.once('spawn', () => {
     logger.success(`Bot ${bot.username} spawned`);
     const cfg = getConfig();
-
     if (cfg.plugins && cfg.plugins.antiAfk) antiAfk(bot);
     if (cfg.plugins && cfg.plugins.randomMove) randomMove(bot);
     if (cfg.plugins && cfg.plugins.chatLogger) chatLogger(bot);
-
     if (cfg.plugins && cfg.plugins.autoLobby) {
       setTimeout(() => autoLobby(bot), 2000);
     } else if (cfg.plugins && cfg.plugins.autoSpawnCommand) {
@@ -147,9 +140,7 @@ function createBot(accountConfig) {
         setTimeout(() => bot.chat('/lobby'), 3000);
       }, 5000);
     }
-
     broadcastBotsStatus();
-
     // Shard query: only on login/spawn
     setTimeout(() => {
       if (bot.entity) {
@@ -205,7 +196,7 @@ function createBot(accountConfig) {
 
 /**
  * Iterate over the accounts defined in config/config.json and create a
- * bot for each one.
+ * bot for each one with staggered delays.
  */
 function startBots() {
   const cfg = getConfig();
@@ -218,7 +209,33 @@ function startBots() {
       return;
     }
   }
-  accounts.forEach(acc => createBot(acc));
+
+  console.log('🚀 Starting bots with staggered random delays...');
+
+  // Define delay ranges per bot index (in seconds) - customize these!
+  const delayRanges = [
+    { min: 5,  max: 20 },   // Bot 1: fast start
+    { min: 15, max: 40 },   // Bot 2: medium
+    { min: 25, max: 60 },   // Bot 3: medium-slow
+    { min: 40, max: 90 },   // Bot 4: slow
+    { min: 60, max: 120 }   // Bot 5: slowest
+  ];
+
+  accounts.forEach((acc, index) => {
+    const range = delayRanges[index] || { min: 10, max: 60 }; // fallback for extra accounts
+    const randomSeconds = Math.floor(Math.random() * (range.max - range.min + 1)) + range.min;
+    const delayMs = randomSeconds * 1000;
+
+    console.log(
+      `[DELAY] Scheduling ${acc.username} in ${randomSeconds}–${range.max}s ` +
+      `(range: ${range.min}–${range.max}s)`
+    );
+
+    setTimeout(() => {
+      console.log(`[DELAY] Launching ${acc.username} now`);
+      createBot(acc);
+    }, delayMs);
+  });
 }
 
 // Socket.io connection handling
