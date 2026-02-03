@@ -2,7 +2,7 @@ const mineflayer = require('mineflayer');
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const { SocksProxyAgent } = require('socks-proxy-agent'); // added for proxy support
+const { SocksProxyAgent } = require('socks-proxy-agent');
 
 const serverConfig = require('./config/bot.config');
 const logger = require('./utils/logger');
@@ -19,27 +19,22 @@ const autoLobby = require('./plugins/autoLobby');
 // Discord integration
 const startDiscordBot = require('./discord/bot');
 
-// Store all active bots keyed by their username (config key = email/account identifier)
+// Store all active bots
 const bots = {};
 
-// Create the web server and socket.io instance.
+// Web server + socket.io
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// Serve static files from the web/public folder
 app.use(express.static(__dirname + '/web/public'));
 
-// Start the HTTP server on the configured port.
 if (getConfig().web && getConfig().web.enabled) {
   server.listen(getConfig().web.port, () => {
     logger.success(`Web dashboard running on port ${getConfig().web.port}`);
   });
 }
 
-/**
- * Broadcast the status of all bots to connected web clients.
- */
 function broadcastBotsStatus() {
   const cfg = getConfig();
   if (!cfg.web || !cfg.web.enabled) return;
@@ -55,15 +50,10 @@ function broadcastBotsStatus() {
   io.emit('bots', statuses);
 }
 
-/**
- * Create and initialise a bot for the given account.
- * @param {object} accountConfig An entry from config/config.json.accounts
- */
 function createBot(accountConfig) {
   const cfgBot = serverConfig.server;
   logger.info(`Starting bot for ${accountConfig.username}…`);
 
-  // Prepare bot options
   const botOptions = {
     host: cfgBot.host,
     port: cfgBot.port,
@@ -72,7 +62,6 @@ function createBot(accountConfig) {
     auth: accountConfig.auth
   };
 
-  // Apply proxy if defined in config (for 5socks or Webshare)
   if (accountConfig.proxy) {
     try {
       botOptions.agent = new SocksProxyAgent(accountConfig.proxy);
@@ -81,21 +70,19 @@ function createBot(accountConfig) {
       logger.error(`Failed to set proxy for ${accountConfig.username}: ${proxyErr.message}`);
     }
   } else {
-    logger.info(`No proxy configured for ${accountConfig.username} — using direct connection`);
+    logger.info(`No proxy for ${accountConfig.username} — direct connection`);
   }
 
   const bot = mineflayer.createBot(botOptions);
   bots[accountConfig.username] = bot;
 
-  bot.shards = null; // Shard count storage
+  bot.shards = null;
 
-  // Improved chat parser for shards (handles "your shards: 2.62k" and similar)
+  // Shard parser (ignores small numbers from AFK messages)
   bot.on('message', (jsonMsg) => {
     const text = jsonMsg.toString().trim().toLowerCase();
-    // Debug: log every chat message (remove later if too noisy)
-    console.log('[CHAT RAW]', text);
 
-    // Priority 1: Catch formatted "your shards: 2.62k" / "shards : 2.62K" / etc.
+    // Priority 1: Formatted shards
     const formattedRegex = /(?:your\s*shards\s*[:=-]\s*|shards\s*[:=-]\s*|\b)([\d.]+)([kmb]?)/i;
     const formattedMatch = text.match(formattedRegex);
     if (formattedMatch && formattedMatch[1]) {
@@ -106,22 +93,21 @@ function createBot(accountConfig) {
       else if (suffix === 'm') multiplier = 1000000;
       else if (suffix === 'b') multiplier = 1000000000;
       const number = parseFloat(numStr);
-      if (!isNaN(number)) {
+      if (!isNaN(number) && number >= 0.1) {
         const final = Math.round(number * multiplier);
         bot.shards = final;
-        console.log(`[SHARDS UPDATE] Formatted match: ${final} (from "${formattedMatch[0]}") for ${bot.username || accountConfig.username}`);
-        return; // Stop here - we have the correct value
+        logger.info(`[SHARDS] ${bot.username || accountConfig.username} → ${final}`);
+        return;
       }
     }
 
-    // Priority 2: Only fallback to plain number if no formatted match (stricter threshold)
+    // Priority 2: Plain number (only large values)
     const plainMatch = text.match(/\b(\d+)\b/);
     if (plainMatch && plainMatch[1]) {
       const count = parseInt(plainMatch[1], 10);
-      // Ignore anything under 1000 – shard balances are rarely that low
       if (count >= 1000 && count < 10000000) {
         bot.shards = count;
-        console.log(`[SHARDS UPDATE] Plain fallback: ${count} for ${bot.username || accountConfig.username}`);
+        logger.info(`[SHARDS] Plain update: ${count} for ${bot.username || accountConfig.username}`);
       }
     }
   });
@@ -129,6 +115,7 @@ function createBot(accountConfig) {
   bot.once('spawn', () => {
     logger.success(`Bot ${bot.username} spawned`);
     const cfg = getConfig();
+
     if (cfg.plugins && cfg.plugins.antiAfk) antiAfk(bot);
     if (cfg.plugins && cfg.plugins.randomMove) randomMove(bot);
     if (cfg.plugins && cfg.plugins.chatLogger) chatLogger(bot);
@@ -140,14 +127,15 @@ function createBot(accountConfig) {
         setTimeout(() => bot.chat('/lobby'), 3000);
       }, 5000);
     }
+
     broadcastBotsStatus();
-    // Shard query: only on login/spawn
+
     setTimeout(() => {
       if (bot.entity) {
         bot.chat('/shards');
-        console.log(`[SHARDS] Login query sent for ${bot.username || accountConfig.username}`);
+        logger.info(`[SHARDS] Login query sent for ${bot.username || accountConfig.username}`);
       }
-    }, 8000); // delay for full login
+    }, 8000);
   });
 
   bot.on('death', () => {
@@ -185,51 +173,45 @@ function createBot(accountConfig) {
     logger.error(err);
   });
 
-  // 3-hour periodic shard query (per bot)
   setInterval(() => {
     if (bot?.entity) {
       bot.chat('/shards');
-      console.log(`[SHARDS] 3-hour query sent for ${bot.username || accountConfig.username}`);
+      logger.info(`[SHARDS] 3-hour query sent for ${bot.username || accountConfig.username}`);
     }
-  }, 3 * 60 * 60 * 1000); // 10800000 ms = 3 hours
+  }, 3 * 60 * 60 * 1000);
 }
 
 /**
- * Iterate over the accounts defined in config/config.json and create a
- * bot for each one with staggered delays.
+ * Launch bots with staggered random delays.
  */
 function startBots() {
   const cfg = getConfig();
   let accounts = cfg.accounts;
   if (!accounts || accounts.length === 0) {
-    if (cfg.account) {
-      accounts = [cfg.account];
-    } else {
-      logger.error('No accounts configured in config/config.json');
+    if (cfg.account) accounts = [cfg.account];
+    else {
+      logger.error('No accounts in config/config.json');
       return;
     }
   }
 
   console.log('🚀 Starting bots with staggered random delays...');
 
-  // Define delay ranges per bot index (in seconds) - customize these!
+  // Delay ranges per bot (in seconds) — customize here
   const delayRanges = [
-    { min: 5,  max: 20 },   // Bot 1: fast start
-    { min: 15, max: 40 },   // Bot 2: medium
-    { min: 25, max: 60 },   // Bot 3: medium-slow
-    { min: 40, max: 90 },   // Bot 4: slow
-    { min: 60, max: 120 }   // Bot 5: slowest
+    { min: 5,  max: 20 },   // Bot 1
+    { min: 15, max: 40 },   // Bot 2
+    { min: 25, max: 60 },   // Bot 3
+    { min: 40, max: 90 },   // Bot 4
+    { min: 60, max: 120 }   // Bot 5
   ];
 
   accounts.forEach((acc, index) => {
-    const range = delayRanges[index] || { min: 10, max: 60 }; // fallback for extra accounts
-    const randomSeconds = Math.floor(Math.random() * (range.max - range.min + 1)) + range.min;
-    const delayMs = randomSeconds * 1000;
+    const range = delayRanges[index] || { min: 10, max: 60 };
+    const randomSec = Math.floor(Math.random() * (range.max - range.min + 1)) + range.min;
+    const delayMs = randomSec * 1000;
 
-    console.log(
-      `[DELAY] Scheduling ${acc.username} in ${randomSeconds}–${range.max}s ` +
-      `(range: ${range.min}–${range.max}s)`
-    );
+    console.log(`[DELAY] ${acc.username} scheduled in ~${randomSec}s (range ${range.min}–${range.max}s)`);
 
     setTimeout(() => {
       console.log(`[DELAY] Launching ${acc.username} now`);
@@ -238,7 +220,7 @@ function startBots() {
   });
 }
 
-// Socket.io connection handling
+// Socket.io
 io.on('connection', socket => {
   broadcastBotsStatus();
 
