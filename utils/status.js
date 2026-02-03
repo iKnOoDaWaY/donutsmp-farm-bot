@@ -57,6 +57,7 @@ function getBotStatus(bot, config) {
   }
   const e = bot.entity;
   const scoreboard = readScoreboard(bot, config?.discord?.scoreboardMaxLines || 10);
+
   return {
     online: true,
     alive: e.health > 0,
@@ -64,7 +65,8 @@ function getBotStatus(bot, config) {
     food: Math.round(bot.food),
     dimension: getDimensionName(bot.game.dimension),
     position: `${Math.floor(e.position.x)}, ${Math.floor(e.position.y)}, ${Math.floor(e.position.z)}`,
-    scoreboard
+    scoreboard,
+    shards: bot.shards ?? null,   // ← this is the correct line to add
   };
 }
 
