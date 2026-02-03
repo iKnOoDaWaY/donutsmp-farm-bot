@@ -30,6 +30,7 @@ module.exports = function startDiscordBot(getBots) {
   const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
   client.once('ready', async () => {
+	  
     console.log(`[DISCORD] Bot connected as ${client.user.tag}`);
     try {
       const rest = new REST({ version: '10' }).setToken(cfg.discord.token);
@@ -104,7 +105,7 @@ module.exports = function startDiscordBot(getBots) {
               statusMessage = await channel.send({ embeds: [embed] });
               console.log('[DISCORD] New status embed sent - ID:', statusMessage.id);
             } else {
-              console.log('[DISCORD] Editing existing embed - ID:', statusMessage.id);
+              //console.log('[DISCORD] Editing existing embed - ID:', statusMessage.id);
               await statusMessage.edit({ embeds: [embed] });
             }
           } catch (err) {
