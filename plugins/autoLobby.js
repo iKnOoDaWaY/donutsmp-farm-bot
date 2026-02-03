@@ -2,35 +2,44 @@ const logger = require('../utils/logger');
 
 /**
  * Automatically sends /spawn on connection, but skips if already in an AFK area.
- * Waits longer (15 seconds) to give server time to send the message.
+ * Checks raw chat for messages containing "ᴀꜰᴋ" + number (e.g. "ᴀꜰᴋ 52")
  * @param {object} bot The mineflayer bot instance
  */
 module.exports = function autoLobby(bot) {
   let detectedAfk = false;
 
-  // Flexible pattern for AFK messages
-  const afkPattern = /You teleported to the.*ᴀꜰᴋ\s*\d+/i;
+  // Pattern to match any AFK area teleport message
+  // Examples: "you teleported to the ᴀꜰᴋ 52", "ᴀꜰᴋ 1", "AFK 99", etc.
+  const afkPattern = /ᴀꜰᴋ\s*\d+|afk\s*\d+|the\s*ᴀꜰᴋ\s*\d+|afk\s*area/i;
 
-  const listener = (jsonMsg) => {
+  // Listen for chat messages
+  const afkListener = (jsonMsg) => {
     const text = jsonMsg.toString().toLowerCase();
+
+    console.log('[CHAT RAW]', text); // Temporary debug
+
     if (afkPattern.test(text)) {
       detectedAfk = true;
-      logger.info(`[AutoLobby] AFK detected: "${text}" → skipping /spawn`);
-      bot.off('message', listener);
+      logger.info(`[AutoLobby] Detected AFK area message: "${text}" → skipping /spawn`);
+      // Stop listening once confirmed
+      bot.off('message', afkListener);
     }
   };
 
-  bot.on('message', listener);
+  // Start listening immediately after spawn
+  bot.on('message', afkListener);
 
+  // Wait 15 seconds — enough time for the server to send the message
   setTimeout(() => {
     if (detectedAfk) {
-      logger.info('[AutoLobby] Already in AFK area — /spawn skipped');
+      logger.info('[AutoLobby] Bot is already in AFK area — no /spawn needed');
     } else {
       const cmd = '/spawn';
-      logger.info(`[AutoLobby] No AFK message after 15s — sending ${cmd}`);
+      logger.info(`[AutoLobby] No AFK message detected after 15s — sending ${cmd}`);
       bot.chat(cmd);
     }
 
-    bot.off('message', listener);
-  }, 15000); // 15 seconds - increased from 8s
+    // Cleanup listener
+    bot.off('message', afkListener);
+  }, 15000);
 };

@@ -27,7 +27,7 @@
       grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
       gap: 20px;
     }
-    #chat-section, #log-section {
+    #chat-section {
       flex: 1;
       min-width: 340px;
       background: #161b22;
@@ -64,7 +64,36 @@
       font-size: 0.95em;
     }
     .label { color: #8b949e; }
-    #chat-messages, #log-messages {
+    .control-buttons {
+      margin-top: 12px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .control-btn {
+      padding: 8px 12px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9em;
+    }
+    .disconnect { background: #d73a49; color: white; }
+    .reconnect { background: #238636; color: white; }
+    .send-chat { background: #444d56; color: white; }
+    .chat-per-bot {
+      margin-top: 10px;
+      display: flex;
+      gap: 6px;
+    }
+    .chat-input-small {
+      flex: 1;
+      padding: 6px;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      background: #0d1117;
+      color: #c9d1d9;
+    }
+    #chat-messages {
       flex: 1;
       overflow-y: auto;
       margin-bottom: 10px;
@@ -73,22 +102,22 @@
       border-radius: 6px;
       max-height: 400px;
     }
-    .chat-msg, .log-entry {
+    .chat-msg {
       margin: 6px 0;
       padding: 8px;
       border-radius: 6px;
     }
-    .chat-msg.system, .log-entry.system { background: #21262d; font-style: italic; color: #8b949e; }
-    .log-entry.info { background: #21262d; }
-    .log-entry.success { background: #1f4a3f; }
-    .log-entry.warning { background: #4a3f1f; }
-    .log-entry.error { background: #4a1f1f; color: #ff9999; }
-    #chat-input-form, #log-filter {
+    .chat-msg.system {
+      background: #21262d;
+      font-style: italic;
+      color: #8b949e;
+    }
+    #global-chat-form {
       display: flex;
       gap: 10px;
       margin-top: 10px;
     }
-    input, select {
+    #global-chat-input {
       flex: 1;
       padding: 10px;
       border: 1px solid #30363d;
@@ -105,8 +134,6 @@
       cursor: pointer;
     }
     button:hover { background: #2ea043; }
-    button.clear { background: #6e7681; }
-    button.clear:hover { background: #8b95a5; }
   </style>
 </head>
 <body>
@@ -114,52 +141,31 @@
 <h1>DonutSMP Farm Bots - Live Dashboard</h1>
 
 <div id="container">
-  <!-- Bot stats grid -->
+  <!-- Bot stats grid with controls -->
   <div id="bot-grid"></div>
 
-  <!-- Chat & Logs section -->
-  <div style="flex: 1; display: flex; flex-direction: column; gap: 20px;">
-    <!-- Global Chat -->
-    <div id="chat-section">
-      <h2>Global Chat (all bots)</h2>
-      <div id="chat-messages"></div>
-      <form id="chat-input-form">
-        <input type="text" id="chat-input" placeholder="Type message to send to all bots..." autocomplete="off" />
-        <button type="submit">Send to All</button>
-      </form>
-    </div>
-
-    <!-- Log Viewer -->
-    <div id="log-section">
-      <h2>Bot Logs Viewer</h2>
-      <div id="log-filter">
-        <select id="log-bot-filter">
-          <option value="all">All Bots</option>
-        </select>
-        <button class="clear" onclick="clearLogs()">Clear Logs</button>
-      </div>
-      <div id="log-messages"></div>
-    </div>
+  <!-- Global chat section -->
+  <div id="chat-section">
+    <h2>Global Chat (all bots)</h2>
+    <div id="chat-messages"></div>
+    <form id="global-chat-form">
+      <input type="text" id="global-chat-input" placeholder="Type message to send to all bots..." autocomplete="off" />
+      <button type="submit">Send to All</button>
+    </form>
   </div>
 </div>
 
 <script>
   const socket = io();
 
-  let allLogs = {}; // { botName: [entries] }
-
   socket.on('connect', () => {
     console.log('Connected to socket.io');
   });
 
-  // Bot stats
+  // Live bot stats + controls
   socket.on('bots', (botsData) => {
     const grid = document.getElementById('bot-grid');
     grid.innerHTML = '';
-
-    const filterSelect = document.getElementById('log-bot-filter');
-    const currentFilter = filterSelect.value;
-    filterSelect.innerHTML = '<option value="all">All Bots</option>';
 
     Object.entries(botsData).forEach(([configName, bot]) => {
       const card = document.createElement('div');
@@ -179,71 +185,23 @@
         <div class="stat-line"><span class="label">Dimension:</span> ${bot.dimension}</div>
         <div class="stat-line"><span class="label">Position:</span> ${bot.position}</div>
         <div class="stat-line"><span class="label">Proxy:</span> ${bot.proxy}</div>
+
+        <div class="control-buttons">
+          <button class="control-btn disconnect" onclick="controlBot('${configName}', 'disconnect')">Disconnect</button>
+          <button class="control-btn reconnect" onclick="controlBot('${configName}', 'reconnect')">Reconnect</button>
+        </div>
+
+        <div class="chat-per-bot">
+          <input type="text" class="chat-input-small" id="chat-${configName}" placeholder="Message to ${bot.minecraftUsername || configName}" />
+          <button class="control-btn send-chat" onclick="sendChat('${configName}')">Send</button>
+        </div>
       `;
 
       grid.appendChild(card);
-
-      // Add to log filter
-      const opt = document.createElement('option');
-      opt.value = configName;
-      opt.textContent = configName;
-      filterSelect.appendChild(opt);
     });
-
-    filterSelect.value = currentFilter;
   });
 
-  // Receive individual log entries
-  socket.on('bot-log', (data) => {
-    const { botName, entry } = data;
-    if (!allLogs[botName]) allLogs[botName] = [];
-    allLogs[botName].push(entry);
-    renderLogs();
-  });
-
-  // Receive full logs sync
-  socket.on('all-logs', (logs) => {
-    allLogs = logs;
-    renderLogs();
-  });
-
-  // Render logs based on filter
-  function renderLogs() {
-    const filter = document.getElementById('log-bot-filter').value;
-    const logArea = document.getElementById('log-messages');
-    logArea.innerHTML = '';
-
-    const botsToShow = filter === 'all' ? Object.keys(allLogs) : [filter];
-
-    botsToShow.forEach(botName => {
-      if (allLogs[botName]) {
-        const header = document.createElement('h3');
-        header.textContent = `Logs for ${botName}`;
-        logArea.appendChild(header);
-
-        allLogs[botName].forEach(entry => {
-          const div = document.createElement('div');
-          div.className = `log-entry ${entry.level}`;
-          div.innerHTML = `<small>[${entry.time}]</small> ${entry.message}`;
-          logArea.appendChild(div);
-        });
-      }
-    });
-
-    logArea.scrollTop = logArea.scrollHeight;
-  }
-
-  // Filter change
-  document.getElementById('log-bot-filter').addEventListener('change', renderLogs);
-
-  // Clear logs button
-  function clearLogs() {
-    allLogs = {};
-    renderLogs();
-    socket.emit('clear-logs');
-  }
-
-  // Global chat (your existing code)
+  // Global chat display
   socket.on('chat', (data) => {
     const chatArea = document.getElementById('chat-messages');
     const msgDiv = document.createElement('div');
@@ -258,14 +216,31 @@
     chatArea.scrollTop = chatArea.scrollHeight;
   });
 
+  // Global chat send
   document.getElementById('global-chat-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const input = document.getElementById('global-chat-input');
     const message = input.value.trim();
     if (!message) return;
+
     socket.emit('sendMessage', { message });
     input.value = '';
   });
+
+  // Per-bot control functions
+  function controlBot(botName, action) {
+    socket.emit('maintenance', { action, bot: botName });
+    alert(`Sent ${action} command for ${botName}`);
+  }
+
+  function sendChat(botName) {
+    const input = document.getElementById(`chat-${botName}`);
+    const message = input.value.trim();
+    if (!message) return;
+
+    socket.emit('sendMessage', { message, username: botName });
+    input.value = '';
+  }
 
   function formatUptime(seconds) {
     if (!seconds) return 'Offline';

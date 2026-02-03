@@ -36,24 +36,23 @@ if (getConfig().web && getConfig().web.enabled) {
 }
 
 /**
- * Broadcast live stats to web clients
+ * Broadcast the status of all bots to connected web clients (with live stats).
  */
 function broadcastBotsStatus() {
   const cfg = getConfig();
   if (!cfg.web || !cfg.web.enabled) return;
-
   const statuses = {};
   for (const name of Object.keys(bots)) {
     const bot = bots[name];
     const status = getBotStatus(bot, cfg) || {};
 
     statuses[name] = {
+      ...status,
       configUsername: name,
       minecraftUsername: bot?.username || 'Offline',
       online: !!bot?.entity,
-      statusColor: bot?.entity ? '#00ff00' : '#ff0000',
       shards: bot.shards ?? 'Unknown',
-      uptime: bot?.entity ? Math.floor((Date.now() - (bot.sessionStart || Date.now())) / 1000) : 0,
+      uptime: bot?.entity ? Math.floor((Date.now() - bot.sessionStart) / 1000) : 0,
       health: bot?.health ?? 'N/A',
       food: bot?.food ?? 'N/A',
       dimension: bot?.game?.dimension ?? 'N/A',
@@ -61,12 +60,12 @@ function broadcastBotsStatus() {
       proxy: bot?.options?.agent ? 'Yes' : 'No'
     };
   }
-
   io.emit('bots', statuses);
 }
 
 /**
  * Create and initialise a bot for the given account.
+ * @param {object} accountConfig An entry from config/config.json.accounts
  */
 function createBot(accountConfig) {
   const cfgBot = serverConfig.server;
@@ -77,12 +76,17 @@ function createBot(accountConfig) {
     port: cfgBot.port,
     version: cfgBot.version,
     username: accountConfig.username,
-    auth: accountConfig.auth
+    auth: accountConfig.auth,
+    skipValidation: true, // ← fix for PartialReadError
   };
 
   if (accountConfig.proxy) {
     try {
-      botOptions.agent = new SocksProxyAgent(accountConfig.proxy);
+      botOptions.agent = new SocksProxyAgent(accountConfig.proxy, {
+        timeout: 30000, // 30s timeout
+        keepAlive: true,
+        keepAliveMsecs: 1000
+      });
       logger.info(`Proxy enabled for ${accountConfig.username}: ${accountConfig.proxy}`);
     } catch (proxyErr) {
       logger.error(`Failed to set proxy for ${accountConfig.username}: ${proxyErr.message}`);
@@ -95,13 +99,13 @@ function createBot(accountConfig) {
   bot.sessionStart = Date.now(); // For uptime calculation
   bots[accountConfig.username] = bot;
 
-  bot.shards = null;
+  bot.shards = null; // Shard count storage
 
-  // Shard parser (ignores small numbers from AFK messages)
+  // Improved chat parser for shards (handles "your shards: 2.62k" and similar)
   bot.on('message', (jsonMsg) => {
     const text = jsonMsg.toString().trim().toLowerCase();
 
-    // Priority 1: Formatted shards
+    // Priority 1: Catch formatted "your shards: 2.62k" / "shards : 2.62K" / etc.
     const formattedRegex = /(?:your\s*shards\s*[:=-]\s*|shards\s*[:=-]\s*|\b)([\d.]+)([kmb]?)/i;
     const formattedMatch = text.match(formattedRegex);
     if (formattedMatch && formattedMatch[1]) {
@@ -112,21 +116,22 @@ function createBot(accountConfig) {
       else if (suffix === 'm') multiplier = 1000000;
       else if (suffix === 'b') multiplier = 1000000000;
       const number = parseFloat(numStr);
-      if (!isNaN(number) && number >= 0.1) {
+      if (!isNaN(number)) {
         const final = Math.round(number * multiplier);
         bot.shards = final;
-        logger.info(`[SHARDS] ${bot.username || accountConfig.username} → ${final}`);
-        return;
+        console.log(`[SHARDS UPDATE] Formatted match: ${final} (from "${formattedMatch[0]}") for ${bot.username || accountConfig.username}`);
+        return; // Stop here - we have the correct value
       }
     }
 
-    // Priority 2: Plain number (only large values)
+    // Priority 2: Only fallback to plain number if no formatted match (skip very small numbers)
     const plainMatch = text.match(/\b(\d+)\b/);
     if (plainMatch && plainMatch[1]) {
       const count = parseInt(plainMatch[1], 10);
-      if (count >= 1000 && count < 10000000) {
+      // Ignore tiny numbers like "2" or "57" that are likely not the real balance
+      if (count >= 100 && count < 10000000) {
         bot.shards = count;
-        logger.info(`[SHARDS] Plain update: ${count} for ${bot.username || accountConfig.username}`);
+        console.log(`[SHARDS UPDATE] Plain fallback: ${count} for ${bot.username || accountConfig.username}`);
       }
     }
   });
@@ -154,7 +159,7 @@ function createBot(accountConfig) {
         bot.chat('/shards');
         logger.info(`[SHARDS] Login query sent for ${bot.username || accountConfig.username}`);
       }
-    }, 8000);
+    }, 8000); // delay for full login
   });
 
   bot.on('death', () => {
@@ -176,7 +181,7 @@ function createBot(accountConfig) {
     }
   });
 
-  if (getConfig().plugins && getConfig().plugins.autoReconnect) {
+  if (getConfig().plugins && cfg.plugins.autoReconnect) {
     autoReconnect(bot, () => {
       logger.info(`Recreating bot for ${accountConfig.username}…`);
       createBot(accountConfig);
@@ -192,104 +197,46 @@ function createBot(accountConfig) {
     logger.error(err);
   });
 
+  // 3-hour periodic shard query (per bot)
   setInterval(() => {
     if (bot?.entity) {
       bot.chat('/shards');
       logger.info(`[SHARDS] 3-hour query sent for ${bot.username || accountConfig.username}`);
     }
-  }, 3 * 60 * 60 * 1000);
+  }, 3 * 60 * 60 * 1000); // 10800000 ms = 3 hours
 }
 
 /**
- * Launch bots with staggered random delays.
+ * Iterate over the accounts defined in config/config.json and create a
+ * bot for each one.
  */
 function startBots() {
   const cfg = getConfig();
   let accounts = cfg.accounts;
   if (!accounts || accounts.length === 0) {
-    if (cfg.account) accounts = [cfg.account];
-    else {
-      logger.error('No accounts in config/config.json');
+    if (cfg.account) {
+      accounts = [cfg.account];
+    } else {
+      logger.error('No accounts configured in config/config.json');
       return;
     }
   }
-
-  console.log('🚀 Starting bots with staggered random delays...');
-
-  // Delay ranges per bot (in seconds) - customize here
-  const delayRanges = [
-    { min: 5,  max: 20 },   // Bot 1
-    { min: 15, max: 40 },   // Bot 2
-    { min: 25, max: 60 },   // Bot 3
-    { min: 40, max: 90 },   // Bot 4
-    { min: 60, max: 120 }   // Bot 5
-  ];
-
-  accounts.forEach((acc, index) => {
-    const range = delayRanges[index] || { min: 10, max: 60 };
-    const randomSec = Math.floor(Math.random() * (range.max - range.min + 1)) + range.min;
-    const delayMs = randomSec * 1000;
-
-    console.log(`[DELAY] ${acc.username} scheduled in ~${randomSec}s (range ${range.min}–${range.max}s)`);
-
-    setTimeout(() => {
-      console.log(`[DELAY] Launching ${acc.username} now`);
-      createBot(acc);
-    }, delayMs);
-  });
+  accounts.forEach(acc => createBot(acc));
 }
 
 // Socket.io connection handling
 io.on('connection', socket => {
   broadcastBotsStatus();
 
-  // Handle per-bot or global maintenance (disconnect/reconnect)
-  socket.on('maintenance', (data) => {
-    const { action, bot: target } = data;
-    let result = '';
-
-    Object.entries(bots).forEach(([name, bot]) => {
-      if (target === 'all' || name === target) {
-        if (action === 'disconnect') {
-          if (bot?.entity) {
-            bot.quit('Maintenance disconnect from web');
-            result += `${name}: Disconnected\n`;
-          } else {
-            result += `${name}: Already offline\n`;
-          }
-        } else if (action === 'reconnect') {
-          if (bot?.entity) {
-            bot.quit('Maintenance reconnect from web');
-          }
-          // autoReconnect plugin will handle restart
-          result += `${name}: Reconnect triggered\n`;
-        }
-      }
-    });
-
-    socket.emit('maintenance-result', { message: result || 'No matching bots affected' });
-  });
-
-  // Send chat message to specific bot or all
   socket.on('sendMessage', data => {
     const cfg = getConfig();
     if (!cfg.web || !cfg.web.allowWebChat) return;
     if (!data || typeof data.message !== 'string' || data.message.trim().length === 0) return;
-
-    const targetName = data.username || null; // null = all bots
-    const message = data.message.trim();
-
-    if (targetName) {
-      const targetBot = bots[targetName];
-      if (targetBot && targetBot.player) {
-        targetBot.chat(message);
-      }
-    } else {
-      // Send to all bots
-      Object.values(bots).forEach(bot => {
-        if (bot?.player) bot.chat(message);
-      });
-    }
+    const targetName = data.username || Object.keys(bots)[0];
+    const targetBot = bots[targetName];
+    if (!targetBot || !targetBot.player) return;
+    if (data.message.length > 100) return;
+    targetBot.chat(data.message.trim());
   });
 });
 
