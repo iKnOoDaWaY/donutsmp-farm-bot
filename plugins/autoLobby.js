@@ -2,42 +2,39 @@ const logger = require('../utils/logger');
 
 /**
  * Automatically sends /spawn on connection, but skips if already in an AFK area.
- * Checks raw chat for messages containing "ᴀꜰᴋ" + number (e.g. "ᴀꜰᴋ 52")
+ * Waits longer (15 seconds) to allow server to send teleport message.
  * @param {object} bot The mineflayer bot instance
  */
 module.exports = function autoLobby(bot) {
   let detectedAfk = false;
 
-  // Pattern to match any AFK area teleport message
-  // Examples: "you teleported to the ᴀꜰᴋ 52", "ᴀꜰᴋ 1", "AFK 99", etc.
-  const afkPattern = /ᴀꜰᴋ\s*\d+|afk\s*\d+|the\s*ᴀꜰᴋ\s*\d+|afk\s*area/i;
+  // Pattern to match AFK area messages (very flexible)
+  const afkPattern = /(?:you teleported to the|the|in the|to the|afk|ᴀꜰᴋ)\s*(?:area|zone)?\s*ᴀꜰᴋ?\s*\d+|afk\s*\d+|ᴀꜰᴋ\s*\d+/i;
 
-  // Listen for chat messages
-  const afkListener = (jsonMsg) => {
+  // Listen for messages
+  const listener = (jsonMsg) => {
     const text = jsonMsg.toString().toLowerCase();
 
     if (afkPattern.test(text)) {
       detectedAfk = true;
-      logger.info(`[AutoLobby] Detected AFK area message: "${text}" → skipping /spawn`);
-      // Stop listening once confirmed
-      bot.off('message', afkListener);
+      logger.info(`[AutoLobby] AFK detected in chat: "${text}" → will skip /spawn`);
+      bot.off('message', listener);
     }
   };
 
-  // Start listening immediately after spawn
-  bot.on('message', afkListener);
+  bot.on('message', listener);
 
-  // Wait 8 seconds — enough time for the server to send the message
+  // Wait **15 seconds** for the AFK message to arrive
   setTimeout(() => {
     if (detectedAfk) {
-      logger.info('[AutoLobby] Bot is already in AFK area — no /spawn needed');
+      logger.info('[AutoLobby] Bot is already in AFK area — /spawn skipped');
     } else {
       const cmd = '/spawn';
-      logger.info(`[AutoLobby] No AFK message detected after 8s — sending ${cmd}`);
+      logger.info(`[AutoLobby] No AFK message after 15s — sending ${cmd}`);
       bot.chat(cmd);
     }
 
-    // Cleanup listener
-    bot.off('message', afkListener);
-  }, 8000);
+    // Cleanup
+    bot.off('message', listener);
+  }, 15000); // ← Increased to 15 seconds (15000 ms)
 };

@@ -35,21 +35,34 @@ if (getConfig().web && getConfig().web.enabled) {
   });
 }
 
+/**
+ * Broadcast the status of all bots to connected web clients (with live stats).
+ */
 function broadcastBotsStatus() {
   const cfg = getConfig();
   if (!cfg.web || !cfg.web.enabled) return;
+
   const statuses = {};
   for (const name of Object.keys(bots)) {
-    const status = getBotStatus(bots[name], cfg);
-    status.allowWebChat = cfg.web && cfg.web.allowWebChat;
-    if (bots[name].username) {
-      status.botUsername = bots[name].username;
-    }
-    statuses[name] = status;
+    const bot = bots[name];
+    const status = getBotStatus(bot, cfg);
+
+    statuses[name] = {
+      ...status,
+      configUsername: name,
+      minecraftUsername: bot?.username || 'Offline',
+      online: !!bot?.entity,
+      shards: bot.shards ?? 'Unknown',
+      uptime: bot?.entity ? Math.floor((Date.now() - (bot.sessionStart || Date.now())) / 1000) : 0
+    };
   }
+
   io.emit('bots', statuses);
 }
 
+/**
+ * Create and initialise a bot for the given account.
+ */
 function createBot(accountConfig) {
   const cfgBot = serverConfig.server;
   logger.info(`Starting bot for ${accountConfig.username}…`);
@@ -74,6 +87,7 @@ function createBot(accountConfig) {
   }
 
   const bot = mineflayer.createBot(botOptions);
+  bot.sessionStart = Date.now(); // For uptime calculation
   bots[accountConfig.username] = bot;
 
   bot.shards = null;
@@ -81,6 +95,7 @@ function createBot(accountConfig) {
   // Shard parser (ignores small numbers from AFK messages)
   bot.on('message', (jsonMsg) => {
     const text = jsonMsg.toString().trim().toLowerCase();
+    // console.log('[CHAT RAW]', text); // ← comment out to reduce spam
 
     // Priority 1: Formatted shards
     const formattedRegex = /(?:your\s*shards\s*[:=-]\s*|shards\s*[:=-]\s*|\b)([\d.]+)([kmb]?)/i;
@@ -197,7 +212,7 @@ function startBots() {
 
   console.log('🚀 Starting bots with staggered random delays...');
 
-  // Delay ranges per bot (in seconds) — customize here
+  // Delay ranges per bot (in seconds) - customize here
   const delayRanges = [
     { min: 5,  max: 20 },   // Bot 1
     { min: 15, max: 40 },   // Bot 2

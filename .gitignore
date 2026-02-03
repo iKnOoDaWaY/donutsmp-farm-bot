@@ -2,3 +2,4 @@ node_modules/
 package-lock.json
 .rsync-tmp/
 config/config.json
+config/config.json.exemple
