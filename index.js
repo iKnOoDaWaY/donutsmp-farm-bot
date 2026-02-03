@@ -47,7 +47,6 @@ function broadcastBotsStatus() {
     const status = getBotStatus(bot, cfg) || {};
 
     statuses[name] = {
-      ...status,
       configUsername: name,
       minecraftUsername: bot?.username || 'Offline',
       online: !!bot?.entity,
@@ -77,13 +76,13 @@ function createBot(accountConfig) {
     version: cfgBot.version,
     username: accountConfig.username,
     auth: accountConfig.auth,
-    skipValidation: true, // ← fix for PartialReadError
+    skipValidation: true // Fix for PartialReadError
   };
 
   if (accountConfig.proxy) {
     try {
       botOptions.agent = new SocksProxyAgent(accountConfig.proxy, {
-        timeout: 30000, // 30s timeout
+        timeout: 30000,
         keepAlive: true,
         keepAliveMsecs: 1000
       });
@@ -104,6 +103,8 @@ function createBot(accountConfig) {
   // Improved chat parser for shards (handles "your shards: 2.62k" and similar)
   bot.on('message', (jsonMsg) => {
     const text = jsonMsg.toString().trim().toLowerCase();
+    // Debug: log every chat message (remove later if too noisy)
+    console.log('[CHAT RAW]', text);
 
     // Priority 1: Catch formatted "your shards: 2.62k" / "shards : 2.62K" / etc.
     const formattedRegex = /(?:your\s*shards\s*[:=-]\s*|shards\s*[:=-]\s*|\b)([\d.]+)([kmb]?)/i;
@@ -181,7 +182,7 @@ function createBot(accountConfig) {
     }
   });
 
-  if (getConfig().plugins && cfg.plugins.autoReconnect) {
+  if (getConfig().plugins && getConfig().plugins.autoReconnect) {
     autoReconnect(bot, () => {
       logger.info(`Recreating bot for ${accountConfig.username}…`);
       createBot(accountConfig);
@@ -197,31 +198,51 @@ function createBot(accountConfig) {
     logger.error(err);
   });
 
-  // 3-hour periodic shard query (per bot)
   setInterval(() => {
     if (bot?.entity) {
       bot.chat('/shards');
       logger.info(`[SHARDS] 3-hour query sent for ${bot.username || accountConfig.username}`);
     }
-  }, 3 * 60 * 60 * 1000); // 10800000 ms = 3 hours
+  }, 3 * 60 * 60 * 1000);
 }
 
 /**
- * Iterate over the accounts defined in config/config.json and create a
- * bot for each one.
+ * Launch bots with staggered random delays.
  */
 function startBots() {
   const cfg = getConfig();
   let accounts = cfg.accounts;
   if (!accounts || accounts.length === 0) {
-    if (cfg.account) {
-      accounts = [cfg.account];
-    } else {
-      logger.error('No accounts configured in config/config.json');
+    if (cfg.account) accounts = [cfg.account];
+    else {
+      logger.error('No accounts in config/config.json');
       return;
     }
   }
-  accounts.forEach(acc => createBot(acc));
+
+  console.log('🚀 Starting bots with staggered random delays...');
+
+  // Delay ranges per bot (in seconds) - customize here
+  const delayRanges = [
+    { min: 5, max: 20 },
+    { min: 15, max: 40 },
+    { min: 25, max: 60 },
+    { min: 40, max: 90 },
+    { min: 60, max: 120 }
+  ];
+
+  accounts.forEach((acc, index) => {
+    const range = delayRanges[index] || { min: 10, max: 60 };
+    const randomSec = Math.floor(Math.random() * (range.max - range.min + 1)) + range.min;
+    const delayMs = randomSec * 1000;
+
+    console.log(`[DELAY] ${acc.username} scheduled in ~${randomSec}s (range ${range.min}–${range.max}s)`);
+
+    setTimeout(() => {
+      console.log(`[DELAY] Launching ${acc.username} now`);
+      createBot(acc);
+    }, delayMs);
+  });
 }
 
 // Socket.io connection handling
