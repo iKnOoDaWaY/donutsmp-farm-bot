@@ -70,29 +70,30 @@ function createBot(accountConfig) {
   const cfgBot = serverConfig.server;
   logger.info(`Starting bot for ${accountConfig.username}…`);
 
-  const botOptions = {
-    host: cfgBot.host,
-    port: cfgBot.port,
-    version: cfgBot.version,
-    username: accountConfig.username,
-    auth: accountConfig.auth,
-    skipValidation: true // Fix for PartialReadError
-  };
+const botOptions = {
+  host: cfgBot.host,
+  port: cfgBot.port,
+  version: '1.21',
+  skipValidation: true,
+  username: accountConfig.username,
+  auth: accountConfig.auth
+};
 
-  if (accountConfig.proxy) {
-    try {
-      botOptions.agent = new SocksProxyAgent(accountConfig.proxy, {
-        timeout: 30000,
-        keepAlive: true,
-        keepAliveMsecs: 1000
-      });
-      logger.info(`Proxy enabled for ${accountConfig.username}: ${accountConfig.proxy}`);
-    } catch (proxyErr) {
-      logger.error(`Failed to set proxy for ${accountConfig.username}: ${proxyErr.message}`);
-    }
-  } else {
-    logger.info(`No proxy for ${accountConfig.username} — direct connection`);
+if (accountConfig.proxy) {
+  try {
+    botOptions.agent = new SocksProxyAgent(accountConfig.proxy, {
+      timeout: 60000,
+      keepAlive: true,
+      keepAliveMsecs: 2000,
+      retries: 5
+    });
+    logger.info(`Proxy enabled for ${accountConfig.username}: ${accountConfig.proxy} (60s timeout, 5 retries)`);
+  } catch (proxyErr) {
+    logger.error(`Failed to set proxy for ${accountConfig.username}: ${proxyErr.message}`);
   }
+} else {
+  logger.info(`No proxy for ${accountConfig.username} — direct connection`);
+}
 
   const bot = mineflayer.createBot(botOptions);
   bot.sessionStart = Date.now(); // For uptime calculation
