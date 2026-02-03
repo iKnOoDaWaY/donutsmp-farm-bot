@@ -2,6 +2,7 @@ const mineflayer = require('mineflayer');
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const { SocksProxyAgent } = require('socks-proxy-agent'); // added for proxy support
 
 const serverConfig = require('./config/bot.config');
 const logger = require('./utils/logger');
@@ -62,13 +63,28 @@ function createBot(accountConfig) {
   const cfgBot = serverConfig.server;
   logger.info(`Starting bot for ${accountConfig.username}…`);
 
-  const bot = mineflayer.createBot({
+  // Prepare bot options
+  const botOptions = {
     host: cfgBot.host,
     port: cfgBot.port,
     version: cfgBot.version,
     username: accountConfig.username,
     auth: accountConfig.auth
-  });
+  };
+
+  // Apply proxy if defined in config (for 5socks or Webshare)
+  if (accountConfig.proxy) {
+    try {
+      botOptions.agent = new SocksProxyAgent(accountConfig.proxy);
+      logger.info(`Proxy enabled for ${accountConfig.username}: ${accountConfig.proxy}`);
+    } catch (proxyErr) {
+      logger.error(`Failed to set proxy for ${accountConfig.username}: ${proxyErr.message}`);
+    }
+  } else {
+    logger.info(`No proxy configured for ${accountConfig.username} — using direct connection`);
+  }
+
+  const bot = mineflayer.createBot(botOptions);
 
   bots[accountConfig.username] = bot;
 
@@ -78,7 +94,7 @@ function createBot(accountConfig) {
   bot.on('message', (jsonMsg) => {
     const text = jsonMsg.toString().trim().toLowerCase();
 
-    // Debug: log every chat message temporarily
+    // Debug: log every chat message (remove later if too noisy)
     console.log('[CHAT RAW]', text);
 
     // Priority 1: Catch formatted "your shards: 2.62k" / "shards : 2.62K" / etc.
@@ -103,7 +119,7 @@ function createBot(accountConfig) {
       }
     }
 
-    // Priority 2: Only fallback to plain number if no formatted match (and skip very small numbers)
+    // Priority 2: Fallback plain number only if no formatted match (skip very small numbers)
     const plainMatch = text.match(/\b(\d+)\b/);
     if (plainMatch && plainMatch[1]) {
       const count = parseInt(plainMatch[1], 10);
