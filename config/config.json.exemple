@@ -3,11 +3,13 @@
     {
       "username": "EMAIL_MICROSOFT_1",
       "auth": "microsoft"
+      "proxy": "socks5://another-proxy-here:port"
     },
-    {
-      "username": "EMAIL_MICROSOFT_2",
-      "auth": "microsoft"
-    }
+{
+    "username": "another@email.com",
+    "auth": "microsoft",
+    "proxy": "socks5://another-proxy-here:port"
+  }
   ],
   "plugins": {
     "antiAfk": true,
