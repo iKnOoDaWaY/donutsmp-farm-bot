@@ -18,7 +18,7 @@ const autoLobby = require('./plugins/autoLobby');
 // Discord integration
 const startDiscordBot = require('./discord/bot');
 
-// Store all active bots keyed by their username.
+// Store all active bots keyed by their username (config key = email/account identifier)
 const bots = {};
 
 // Create the web server and socket.io instance.
@@ -61,6 +61,7 @@ function broadcastBotsStatus() {
 function createBot(accountConfig) {
   const cfgBot = serverConfig.server;
   logger.info(`Starting bot for ${accountConfig.username}…`);
+
   const bot = mineflayer.createBot({
     host: cfgBot.host,
     port: cfgBot.port,
@@ -68,29 +69,48 @@ function createBot(accountConfig) {
     username: accountConfig.username,
     auth: accountConfig.auth
   });
+
   bots[accountConfig.username] = bot;
 
   bot.shards = null; // Shard count storage
 
-  // Chat parser for shards
+  // Improved chat parser for shards (handles "your shards: 2.62k" and similar)
   bot.on('message', (jsonMsg) => {
-    const text = jsonMsg.toString().trim();
-    const patterns = [
-      /you have (\d+) shards/i,
-      /shards:\s*(\d+)/i,
-      /balance.*shards.*(\d+)/i,
-      /you currently have (\d+) shards/i,
-      /(\d+) shards/i
-    ];
-    for (const regex of patterns) {
-      const match = text.match(regex);
-      if (match && match[1]) {
-        const count = parseInt(match[1], 10);
-        if (!isNaN(count)) {
-          bot.shards = count;
-          console.log(`[SHARDS UPDATE] ${bot.username}: ${count}`);
-          return;
-        }
+    const text = jsonMsg.toString().trim().toLowerCase();
+
+    // Debug: log every chat message temporarily
+    console.log('[CHAT RAW]', text);
+
+    // Priority 1: Catch formatted "your shards: 2.62k" / "shards : 2.62K" / etc.
+    const formattedRegex = /(?:your\s*shards\s*[:=-]\s*|shards\s*[:=-]\s*|\b)([\d.]+)([kmb]?)/i;
+    const formattedMatch = text.match(formattedRegex);
+
+    if (formattedMatch && formattedMatch[1]) {
+      let numStr = formattedMatch[1];
+      let multiplier = 1;
+
+      const suffix = formattedMatch[2].toLowerCase();
+      if (suffix === 'k') multiplier = 1000;
+      else if (suffix === 'm') multiplier = 1000000;
+      else if (suffix === 'b') multiplier = 1000000000;
+
+      const number = parseFloat(numStr);
+      if (!isNaN(number)) {
+        const final = Math.round(number * multiplier);
+        bot.shards = final;
+        console.log(`[SHARDS UPDATE] Formatted match: ${final} (from "${formattedMatch[0]}") for ${bot.username || accountConfig.username}`);
+        return; // Stop here - we have the correct value
+      }
+    }
+
+    // Priority 2: Only fallback to plain number if no formatted match (and skip very small numbers)
+    const plainMatch = text.match(/\b(\d+)\b/);
+    if (plainMatch && plainMatch[1]) {
+      const count = parseInt(plainMatch[1], 10);
+      // Ignore tiny numbers like "2" or "57" that are likely not the real balance
+      if (count >= 100 && count < 10000000) {
+        bot.shards = count;
+        console.log(`[SHARDS UPDATE] Plain fallback: ${count} for ${bot.username || accountConfig.username}`);
       }
     }
   });
@@ -98,9 +118,11 @@ function createBot(accountConfig) {
   bot.once('spawn', () => {
     logger.success(`Bot ${bot.username} spawned`);
     const cfg = getConfig();
+
     if (cfg.plugins && cfg.plugins.antiAfk) antiAfk(bot);
     if (cfg.plugins && cfg.plugins.randomMove) randomMove(bot);
     if (cfg.plugins && cfg.plugins.chatLogger) chatLogger(bot);
+
     if (cfg.plugins && cfg.plugins.autoLobby) {
       setTimeout(() => autoLobby(bot), 2000);
     } else if (cfg.plugins && cfg.plugins.autoSpawnCommand) {
@@ -109,9 +131,16 @@ function createBot(accountConfig) {
         setTimeout(() => bot.chat('/lobby'), 3000);
       }, 5000);
     }
+
     broadcastBotsStatus();
-    // Initial shard query
-    setTimeout(() => bot.chat('/shards'), 5000);
+
+    // Shard query: only on login/spawn
+    setTimeout(() => {
+      if (bot.entity) {
+        bot.chat('/shards');
+        console.log(`[SHARDS] Login query sent for ${bot.username || accountConfig.username}`);
+      }
+    }, 8000); // delay for full login
   });
 
   bot.on('death', () => {
@@ -124,11 +153,11 @@ function createBot(accountConfig) {
 
   bot.on('chat', (username, message) => {
     if (getConfig().web && getConfig().web.enabled) {
-      io.emit('chat', { 
+      io.emit('chat', {
         username: accountConfig.username,
         botUsername: bot.username,
         chatUsername: username,
-        message 
+        message
       });
     }
   });
@@ -148,6 +177,14 @@ function createBot(accountConfig) {
   bot.on('error', err => {
     logger.error(err);
   });
+
+  // 3-hour periodic shard query (per bot)
+  setInterval(() => {
+    if (bot?.entity) {
+      bot.chat('/shards');
+      console.log(`[SHARDS] 3-hour query sent for ${bot.username || accountConfig.username}`);
+    }
+  }, 3 * 60 * 60 * 1000); // 10800000 ms = 3 hours
 }
 
 /**
@@ -166,15 +203,6 @@ function startBots() {
     }
   }
   accounts.forEach(acc => createBot(acc));
-
-  // Auto-query shards for all bots every 15 min
-  setInterval(() => {
-    Object.values(bots).forEach(bot => {
-      if (bot.entity) {
-        bot.chat('/shards');
-      }
-    });
-  }, 15 * 60 * 1000);
 }
 
 // Socket.io connection handling
