@@ -18,12 +18,10 @@ const autoLobby = require('./plugins/autoLobby');
 // Discord integration
 const startDiscordBot = require('./discord/bot');
 
-// Store all active bots keyed by their username. This object will be
-// passed into the Discord integration so it can build a live embed.
+// Store all active bots keyed by their username.
 const bots = {};
 
-// Create the web server and socket.io instance. The port is
-// configured via config/config.json and can be reloaded at runtime.
+// Create the web server and socket.io instance.
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
@@ -31,9 +29,7 @@ const io = new Server(server);
 // Serve static files from the web/public folder
 app.use(express.static(__dirname + '/web/public'));
 
-// Start the HTTP server on the configured port. Because the port
-// can change when config/config.json is edited, we read it on start up. To
-// change the port you must restart the node process.
+// Start the HTTP server on the configured port.
 if (getConfig().web && getConfig().web.enabled) {
   server.listen(getConfig().web.port, () => {
     logger.success(`Web dashboard running on port ${getConfig().web.port}`);
@@ -41,11 +37,7 @@ if (getConfig().web && getConfig().web.enabled) {
 }
 
 /**
- * Broadcast the status of all bots to connected web clients. Each
- * status includes whether the bot is online plus health, food,
- * dimension and position if available. The allowWebChat flag is
- * copied from the configuration so the client knows whether to
- * display the message input.
+ * Broadcast the status of all bots to connected web clients.
  */
 function broadcastBotsStatus() {
   const cfg = getConfig();
@@ -54,7 +46,6 @@ function broadcastBotsStatus() {
   for (const name of Object.keys(bots)) {
     const status = getBotStatus(bots[name], cfg);
     status.allowWebChat = cfg.web && cfg.web.allowWebChat;
-    // Add the actual Minecraft username
     if (bots[name].username) {
       status.botUsername = bots[name].username;
     }
@@ -64,10 +55,7 @@ function broadcastBotsStatus() {
 }
 
 /**
- * Create and initialise a bot for the given account. All event
- * handlers are registered here including plugins, auto respawn,
- * auto reconnect and broadcasting of status changes and chat.
- *
+ * Create and initialise a bot for the given account.
  * @param {object} accountConfig An entry from config/config.json.accounts
  */
 function createBot(accountConfig) {
@@ -82,9 +70,31 @@ function createBot(accountConfig) {
   });
   bots[accountConfig.username] = bot;
 
-  // When the bot spawns we apply plugins and optionally run
-  // commands like /spawn and /lobby. We then broadcast status to
-  // update the web dashboard.
+  bot.shards = null; // Shard count storage
+
+  // Chat parser for shards
+  bot.on('message', (jsonMsg) => {
+    const text = jsonMsg.toString().trim();
+    const patterns = [
+      /you have (\d+) shards/i,
+      /shards:\s*(\d+)/i,
+      /balance.*shards.*(\d+)/i,
+      /you currently have (\d+) shards/i,
+      /(\d+) shards/i
+    ];
+    for (const regex of patterns) {
+      const match = text.match(regex);
+      if (match && match[1]) {
+        const count = parseInt(match[1], 10);
+        if (!isNaN(count)) {
+          bot.shards = count;
+          console.log(`[SHARDS UPDATE] ${bot.username}: ${count}`);
+          return;
+        }
+      }
+    }
+  });
+
   bot.once('spawn', () => {
     logger.success(`Bot ${bot.username} spawned`);
     const cfg = getConfig();
@@ -92,7 +102,6 @@ function createBot(accountConfig) {
     if (cfg.plugins && cfg.plugins.randomMove) randomMove(bot);
     if (cfg.plugins && cfg.plugins.chatLogger) chatLogger(bot);
     if (cfg.plugins && cfg.plugins.autoLobby) {
-      // Wait a bit before starting the lobby logic to ensure we are fully loaded
       setTimeout(() => autoLobby(bot), 2000);
     } else if (cfg.plugins && cfg.plugins.autoSpawnCommand) {
       setTimeout(() => {
@@ -101,10 +110,10 @@ function createBot(accountConfig) {
       }, 5000);
     }
     broadcastBotsStatus();
+    // Initial shard query
+    setTimeout(() => bot.chat('/shards'), 5000);
   });
 
-  // Auto respawn the bot on death if enabled. The respawn will
-  // happen after a short delay to allow the death to register.
   bot.on('death', () => {
     const cfg = getConfig();
     if (cfg.plugins && cfg.plugins.autoRespawn) {
@@ -113,9 +122,6 @@ function createBot(accountConfig) {
     }
   });
 
-  // Forward all chat messages to the web clients. We include
-  // accountConfig.username (email) so the client can distinguish between
-  // multiple bots. Also include botUsername (Minecraft username) and chatUsername.
   bot.on('chat', (username, message) => {
     if (getConfig().web && getConfig().web.enabled) {
       io.emit('chat', { 
@@ -127,9 +133,6 @@ function createBot(accountConfig) {
     }
   });
 
-  // Auto reconnect when the bot disconnects if the option is
-  // enabled. The restart function will create a brand new bot and
-  // preserve its entry in the bots dictionary.
   if (getConfig().plugins && getConfig().plugins.autoReconnect) {
     autoReconnect(bot, () => {
       logger.info(`Recreating bot for ${accountConfig.username}…`);
@@ -138,9 +141,6 @@ function createBot(accountConfig) {
     });
   }
 
-  // Broadcast status when the bot ends (disconnects) to update the
-  // dashboard. Note that autoReconnect will create a new bot
-  // instance so this event fires before the new one spawns.
   bot.on('end', () => {
     broadcastBotsStatus();
   });
@@ -152,15 +152,12 @@ function createBot(accountConfig) {
 
 /**
  * Iterate over the accounts defined in config/config.json and create a
- * bot for each one. If no accounts array is defined we fall back
- * to a single account property (for backwards compatibility). If
- * nothing is defined we log an error.
+ * bot for each one.
  */
 function startBots() {
   const cfg = getConfig();
   let accounts = cfg.accounts;
   if (!accounts || accounts.length === 0) {
-    // support legacy single account format
     if (cfg.account) {
       accounts = [cfg.account];
     } else {
@@ -169,25 +166,29 @@ function startBots() {
     }
   }
   accounts.forEach(acc => createBot(acc));
+
+  // Auto-query shards for all bots every 15 min
+  setInterval(() => {
+    Object.values(bots).forEach(bot => {
+      if (bot.entity) {
+        bot.chat('/shards');
+      }
+    });
+  }, 15 * 60 * 1000);
 }
 
-// When a client connects via socket.io we immediately send the
-// current statuses. We also listen for sendMessage events and
-// forward messages to the appropriate bot if web chat is enabled.
+// Socket.io connection handling
 io.on('connection', socket => {
-  // Immediately push current status to the newly connected client
   broadcastBotsStatus();
 
   socket.on('sendMessage', data => {
     const cfg = getConfig();
     if (!cfg.web || !cfg.web.allowWebChat) return;
     if (!data || typeof data.message !== 'string' || data.message.trim().length === 0) return;
-    // Determine which bot to send to. If username is not provided
-    // default to the first available bot.
     const targetName = data.username || Object.keys(bots)[0];
     const targetBot = bots[targetName];
     if (!targetBot || !targetBot.player) return;
-    if (data.message.length > 100) return; // basic anti-spam
+    if (data.message.length > 100) return;
     targetBot.chat(data.message.trim());
   });
 });
