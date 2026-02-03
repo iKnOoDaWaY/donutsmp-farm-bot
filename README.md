@@ -23,7 +23,8 @@ This project lets you run multiple Minecraft bot accounts using the [mineflayer]
 1. Install [Node.js](https://nodejs.org/) (version 18 or higher recommended).
 2. Clone this repository or download the files.
 3. Install dependencies using npm:
-
+      
+    npm install socks-proxy-agent
    ```bash
    npm install
    ```
