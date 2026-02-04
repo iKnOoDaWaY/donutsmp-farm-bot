@@ -48,7 +48,6 @@ function broadcastBotsStatus() {
     const status = getBotStatus(bot, cfg) || {};
 
     statuses[name] = {
-	  nextShardCountdown: bot.nextShardCountdown ?? null,
       configUsername: name,
       minecraftUsername: bot?.username || 'Offline',
       online: !!bot?.entity,
@@ -60,9 +59,7 @@ function broadcastBotsStatus() {
       food: bot?.food ?? 'N/A',
       dimension: bot?.game?.dimension ?? 'N/A',
       position: bot?.entity?.position ? `${Math.floor(bot.entity.position.x)}, ${Math.floor(bot.entity.position.y)}, ${Math.floor(bot.entity.position.z)}` : 'N/A',
-      proxy: bot?.options?.agent ? 'Yes' : 'No',
-      // Optional: include location chat log if you want to show it on web later
-      // locationChatLog: bot.locationChatLog || []
+      proxy: bot?.options?.agent ? 'Yes' : 'No'
     };
   }
 
@@ -82,7 +79,7 @@ function createBot(accountConfig) {
     version: cfgBot.version,
     username: accountConfig.username,
     auth: accountConfig.auth,
-    skipValidation: true
+    skipValidation: true, // Helps with PartialReadError
   };
 
   if (accountConfig.proxy) {
@@ -103,31 +100,15 @@ function createBot(accountConfig) {
 
   const bot = mineflayer.createBot(botOptions);
   bot.sessionStart = Date.now(); // For uptime
-  bot.locationChatLog = [];      // ← Added: store raw chat messages for location checks
   bots[accountConfig.username] = bot;
 
   bot.shards = null;
   bot.keys = null;
 
+  // Chat parser for shards AND keys
   bot.on('message', (jsonMsg) => {
     const text = jsonMsg.toString().trim().toLowerCase();
     console.log('[CHAT RAW]', text);
-
-	const text = jsonMsg.toString().trim();
-    console.log('[CHAT RAW]', text);
-
-  // ... your existing shard and key detection code ...
-
-  // New: Detect "Next shard in XXs" countdown
-    const countdownRegex = /next shard in (\d+)s/i;
-    const countdownMatch = text.match(countdownRegex);
-    if (countdownMatch && countdownMatch[1]) {
-    const seconds = parseInt(countdownMatch[1], 10);
-    bot.nextShardCountdown = seconds;
-    console.log(`[COUNTDOWN] ${bot.username} → Next shard in ${seconds}s`);
-    broadcastBotsStatus(); // Immediately update web dashboard
-    }
-  });
 
     // Shard detection
     const shardRegex = /(?:your\s*shards\s*[:=-]\s*|shards\s*[:=-]\s*|\b)([\d.]+)([kmb]?)/i;
