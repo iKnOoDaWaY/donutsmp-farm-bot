@@ -179,6 +179,7 @@
         <div class="stat-line"><span class="label">Config:</span> ${configName}</div>
         <div class="stat-line"><span class="label">Status:</span> ${bot.online ? '🟢 Online' : '🔴 Offline'}</div>
         <div class="stat-line"><span class="label">Shards:</span> ${bot.shards}</div>
+		<p id="countdown-${configName}" class="stat-line"><span class="label">Next Shard:</span> <span id="countdown-value-${configName}">Offline</span></p>
         <div class="stat-line"><span class="label">Uptime:</span> ${formatUptime(bot.uptime)}</div>
         <div class="stat-line"><span class="label">Health:</span> ${bot.health}</div>
         <div class="stat-line"><span class="label">Food:</span> ${bot.food}</div>
@@ -200,6 +201,23 @@
       grid.appendChild(card);
     });
   });
+  
+  // Auto-decrement countdowns every second
+setInterval(() => {
+  const countdownElements = document.querySelectorAll('[id^="countdown-"]');
+  countdownElements.forEach(el => {
+    let text = el.textContent.trim();
+    if (text.endsWith('s') && !isNaN(parseInt(text))) {
+      let seconds = parseInt(text);
+      if (seconds > 0) {
+        seconds--;
+        el.textContent = seconds + 's';
+      } else {
+        el.textContent = 'Soon';
+      }
+    }
+  });
+ }, 1000);
 
   // Global chat display
   socket.on('chat', (data) => {

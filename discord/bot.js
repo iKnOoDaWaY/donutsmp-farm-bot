@@ -15,11 +15,6 @@ let updateInterval = null;
 let statusChannelId = null;
 let fetchWarningShown = false;
 
-/**
- * Start the Discord bot. Pass a function that returns the current
- * dictionary of bots.
- * @param {Function} getBots A function returning an object of bots
- */
 module.exports = function startDiscordBot(getBots) {
   const cfg = getConfig();
   if (!cfg.discord || !cfg.discord.enabled) {
@@ -95,14 +90,14 @@ module.exports = function startDiscordBot(getBots) {
             channel = await client.channels.fetch(statusChannelId);
           } catch (fetchErr) {
             if (!fetchWarningShown) {
-              console.warn('[DISCORD] Failed to fetch channel (may be deleted/permissions issue):', fetchErr.message);
+              console.warn('[DISCORD] Failed to fetch channel:', fetchErr.message);
               fetchWarningShown = true;
             }
             return;
           }
 
           if (!channel || channel.type !== ChannelType.GuildText) {
-            console.warn('[DISCORD] Channel no longer accessible or wrong type');
+            console.warn('[DISCORD] Channel no longer accessible');
             return;
           }
 

@@ -48,6 +48,7 @@ function broadcastBotsStatus() {
     const status = getBotStatus(bot, cfg) || {};
 
     statuses[name] = {
+	  nextShardCountdown: bot.nextShardCountdown ?? null,
       configUsername: name,
       minecraftUsername: bot?.username || 'Offline',
       online: !!bot?.entity,
@@ -111,6 +112,22 @@ function createBot(accountConfig) {
   bot.on('message', (jsonMsg) => {
     const text = jsonMsg.toString().trim().toLowerCase();
     console.log('[CHAT RAW]', text);
+
+	const text = jsonMsg.toString().trim();
+    console.log('[CHAT RAW]', text);
+
+  // ... your existing shard and key detection code ...
+
+  // New: Detect "Next shard in XXs" countdown
+    const countdownRegex = /next shard in (\d+)s/i;
+    const countdownMatch = text.match(countdownRegex);
+    if (countdownMatch && countdownMatch[1]) {
+    const seconds = parseInt(countdownMatch[1], 10);
+    bot.nextShardCountdown = seconds;
+    console.log(`[COUNTDOWN] ${bot.username} → Next shard in ${seconds}s`);
+    broadcastBotsStatus(); // Immediately update web dashboard
+    }
+  });
 
     // Shard detection
     const shardRegex = /(?:your\s*shards\s*[:=-]\s*|shards\s*[:=-]\s*|\b)([\d.]+)([kmb]?)/i;
