@@ -63,6 +63,11 @@ Edit `config/config.json` to set up your accounts and preferences. Example:
   }
 }
 ```
+## COmmands
+
+/stats
+/kick
+/shards - uses on screen stats to show shards.
 
 - **accounts**: list of bot accounts. Use your Microsoft email and set `"auth": "microsoft"`. The web dashboard, console logs and Discord embed will display the actual Minecraft username of each bot.
 - **plugins**: toggle individual behaviours.
