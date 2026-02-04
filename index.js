@@ -41,7 +41,6 @@ if (getConfig().web && getConfig().web.enabled) {
 function broadcastBotsStatus() {
   const cfg = getConfig();
   if (!cfg.web || !cfg.web.enabled) return;
-
   const statuses = {};
   for (const name of Object.keys(bots)) {
     const bot = bots[name];
@@ -61,7 +60,6 @@ function broadcastBotsStatus() {
       proxy: bot?.options?.agent ? 'Yes' : 'No'
     };
   }
-
   io.emit('bots', statuses);
 }
 
@@ -79,7 +77,7 @@ function createBot(accountConfig) {
     version: cfgBot.version,
     username: accountConfig.username,
     auth: accountConfig.auth,
-    skipValidation: true, // Helps with PartialReadError on 1.20.5+
+    skipValidation: true  // Helps with PartialReadError
   };
 
   if (accountConfig.proxy) {
@@ -90,7 +88,7 @@ function createBot(accountConfig) {
         keepAliveMsecs: 2000,
         retries: 3                // Retry 3 times
       });
-      logger.info(`Proxy enabled for ${accountConfig.username}: ${accountConfig.proxy} (60s timeout, 3 retries)`);
+      logger.info(`Proxy enabled for ${accountConfig.username}: ${accountConfig.proxy}`);
     } catch (proxyErr) {
       logger.error(`Failed to set proxy for ${accountConfig.username}: ${proxyErr.message}`);
     }
@@ -104,11 +102,9 @@ function createBot(accountConfig) {
 
   bot.shards = null; // Shard count storage
 
-  // Improved chat parser for shards (handles "your shards: 2.62k" and similar)
+  // Improved chat parser for shards (ignores small numbers from AFK messages)
   bot.on('message', (jsonMsg) => {
     const text = jsonMsg.toString().trim().toLowerCase();
-    // Debug: log every chat message (remove later if too noisy)
-    // console.log('[CHAT RAW]', text);
 
     // Priority 1: Catch formatted "your shards: 2.62k" / "shards : 2.62K" / etc.
     const formattedRegex = /(?:your\s*shards\s*[:=-]\s*|shards\s*[:=-]\s*|\b)([\d.]+)([kmb]?)/i;
@@ -217,9 +213,8 @@ function startBots() {
   const cfg = getConfig();
   let accounts = cfg.accounts;
   if (!accounts || accounts.length === 0) {
-    if (cfg.account) {
-      accounts = [cfg.account];
-    } else {
+    if (cfg.account) accounts = [cfg.account];
+    else {
       logger.error('No accounts configured in config/config.json');
       return;
     }
@@ -229,11 +224,11 @@ function startBots() {
 
   // Delay ranges per bot (in seconds) - customize here
   const delayRanges = [
-    { min: 5,  max: 20 },   // Bot 1
-    { min: 15, max: 40 },   // Bot 2
-    { min: 25, max: 60 },   // Bot 3
-    { min: 40, max: 90 },   // Bot 4
-    { min: 60, max: 120 }   // Bot 5
+    { min: 5,  max: 20 },
+    { min: 15, max: 40 },
+    { min: 25, max: 60 },
+    { min: 40, max: 90 },
+    { min: 60, max: 120 }
   ];
 
   accounts.forEach((acc, index) => {

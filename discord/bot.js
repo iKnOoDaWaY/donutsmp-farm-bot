@@ -44,6 +44,18 @@ module.exports = function startDiscordBot(getBots) {
             {
               name: 'shards',
               description: 'Show current shard count for each bot'
+            },
+            {
+              name: 'kick',
+              description: 'Force disconnect one or all bots',
+              options: [
+                {
+                  name: 'bot',
+                  description: 'Bot name or "all"',
+                  type: 3, // String
+                  required: true
+                }
+              ]
             }
           ]
         }
@@ -54,7 +66,7 @@ module.exports = function startDiscordBot(getBots) {
     }
   });
 
-  client.on('interactionCreate', async interaction => {  // ← added async here
+  client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
     if (interaction.commandName === 'send-embed') {
@@ -100,21 +112,15 @@ module.exports = function startDiscordBot(getBots) {
 
           try {
             if (!statusMessage) {
-              console.log('[DISCORD] Sending new status embed...');
               statusMessage = await channel.send({ embeds: [embed] });
-              console.log('[DISCORD] New status embed sent - ID:', statusMessage.id);
             } else {
-              console.log('[DISCORD] Editing existing embed - ID:', statusMessage.id);
               await statusMessage.edit({ embeds: [embed] });
             }
           } catch (err) {
             console.error('[DISCORD] Failed to send/edit embed:', err.message);
-            console.error('[DISCORD] Error stack:', err.stack);
 
             try {
-              console.log('[DISCORD] Fallback: attempting new send...');
               statusMessage = await channel.send({ embeds: [embed] });
-              console.log('[DISCORD] Fallback success - new embed ID:', statusMessage.id);
             } catch (fallbackErr) {
               console.error('[DISCORD] Fallback send failed:', fallbackErr.message);
             }
@@ -144,21 +150,18 @@ module.exports = function startDiscordBot(getBots) {
 
         const bots = getBots();
 
-        // Force fresh shard query on all online bots when command is run
         Object.values(bots).forEach(bot => {
           if (bot?.entity) {
             bot.chat('/shards');
-            console.log(`[SHARDS] Command-triggered query for ${bot.username || 'unknown'}`);
           }
         });
 
-        // Wait ~8 seconds for server responses to arrive
         await new Promise(resolve => setTimeout(resolve, 8000));
 
         const embed = new EmbedBuilder()
           .setTitle('Bot Shard Balances')
           .setColor(0x9932cc)
-          .setDescription('Latest shard counts (fresh query just sent).')
+          .setDescription('Latest shard counts (fresh query sent).')
           .setTimestamp();
 
         let totalShards = 0;
@@ -188,7 +191,7 @@ module.exports = function startDiscordBot(getBots) {
             inline: false
           });
         } else {
-          embed.setDescription(embed.description + '\n\nNo responses yet — try again in 10–15s if needed.');
+          embed.setDescription(embed.description + '\n\nNo responses yet — try again in 10–15s.');
         }
 
         await interaction.editReply({ embeds: [embed] });
@@ -196,6 +199,36 @@ module.exports = function startDiscordBot(getBots) {
       } catch (err) {
         console.error('[DISCORD] /shards command error:', err);
         await interaction.editReply({ content: 'Error fetching shard data.' });
+      }
+    }
+
+    if (interaction.commandName === 'kick') {
+      try {
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+        const target = interaction.options.getString('bot');
+        const bots = getBots();
+        let result = '';
+
+        Object.entries(bots).forEach(([name, bot]) => {
+          if (target === 'all' || name === target) {
+            if (bot?.entity) {
+              try {
+                bot.quit('Kicked via /kick command');
+                result += `${name}: Disconnected\n`;
+              } catch (quitErr) {
+                result += `${name}: Disconnect failed - ${quitErr.message}\n`;
+              }
+            } else {
+              result += `${name}: Already offline\n`;
+            }
+          }
+        });
+
+        await interaction.editReply({ content: result || 'No bots kicked' });
+      } catch (err) {
+        console.error('[DISCORD] /kick error:', err);
+        await interaction.editReply({ content: 'Error during kick command.' });
       }
     }
   });
@@ -250,7 +283,6 @@ function buildEmbed(bots, cfg) {
       statusLines.push(`**Position:** x:${Math.floor(pos.x)} y:${Math.floor(pos.y)} z:${Math.floor(pos.z)}`);
     }
 
-    // Shards line - uses the value from getBotStatus
     const shardsDisplay = extraStatus.shards !== null && extraStatus.shards !== undefined
       ? `${extraStatus.shards.toLocaleString()} shards`
       : 'Unknown';

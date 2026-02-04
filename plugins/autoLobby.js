@@ -2,25 +2,25 @@ const logger = require('../utils/logger');
 
 /**
  * Automatically sends /spawn on connection, but skips if already in an AFK area.
- * Checks raw chat for messages containing "ᴀꜰᴋ" + number (e.g. "ᴀꜰᴋ 52").
+ * Checks raw chat for messages containing "ᴀꜰᴋ" + number (e.g. "ᴀꜰᴋ 52")
  * @param {object} bot The mineflayer bot instance
  */
 module.exports = function autoLobby(bot) {
   let detectedAfk = false;
 
-  // Pattern to match AFK area messages (flexible)
+  // Pattern to match AFK area messages
   const afkPattern = /ᴀꜰᴋ\s*\d+|afk\s*\d+|teleported to the ᴀꜰᴋ|to the ᴀꜰᴋ|in ᴀꜰᴋ|afk area|afk zone/i;
 
   // Listen for chat messages
   const afkListener = (jsonMsg) => {
     const text = jsonMsg.toString().toLowerCase();
 
-    // Debug: log every message checked
+    // Debug: log every chat message
     console.log('[AFK DEBUG] Raw chat checked:', text);
 
     if (afkPattern.test(text)) {
       detectedAfk = true;
-      logger.info(`[AutoLobby] Detected AFK area in chat: "${text}" → skipping /spawn`);
+      logger.info(`[AutoLobby] Detected AFK area message: "${text}" → skipping /spawn`);
       bot.off('message', afkListener);
     }
   };
@@ -39,5 +39,5 @@ module.exports = function autoLobby(bot) {
 
     // Clean up listener
     bot.off('message', afkListener);
-  }, 15000); // 15 seconds
+  }, 15000);
 };
