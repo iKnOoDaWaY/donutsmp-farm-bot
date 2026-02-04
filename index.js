@@ -53,13 +53,15 @@ function broadcastBotsStatus() {
       online: !!bot?.entity,
       statusColor: bot?.entity ? '#00ff00' : '#ff0000',
       shards: bot.shards ?? 'Unknown',
-      keys: bot.keys ?? 'Unknown', // Separate key count
+      keys: bot.keys ?? 'Unknown',
       uptime: bot?.entity ? Math.floor((Date.now() - bot.sessionStart) / 1000) : 0,
       health: bot?.health ?? 'N/A',
       food: bot?.food ?? 'N/A',
       dimension: bot?.game?.dimension ?? 'N/A',
       position: bot?.entity?.position ? `${Math.floor(bot.entity.position.x)}, ${Math.floor(bot.entity.position.y)}, ${Math.floor(bot.entity.position.z)}` : 'N/A',
-      proxy: bot?.options?.agent ? 'Yes' : 'No'
+      proxy: bot?.options?.agent ? 'Yes' : 'No',
+      // Optional: include location chat log if you want to show it on web later
+      // locationChatLog: bot.locationChatLog || []
     };
   }
 
@@ -68,7 +70,6 @@ function broadcastBotsStatus() {
 
 /**
  * Create and initialise a bot for the given account.
- * @param {object} accountConfig An entry from config/config.json.accounts
  */
 function createBot(accountConfig) {
   const cfgBot = serverConfig.server;
@@ -80,7 +81,7 @@ function createBot(accountConfig) {
     version: cfgBot.version,
     username: accountConfig.username,
     auth: accountConfig.auth,
-    skipValidation: true, // Helps with PartialReadError on 1.20.5+
+    skipValidation: true
   };
 
   if (accountConfig.proxy) {
@@ -100,13 +101,13 @@ function createBot(accountConfig) {
   }
 
   const bot = mineflayer.createBot(botOptions);
-  bot.sessionStart = Date.now(); // For uptime calculation
+  bot.sessionStart = Date.now(); // For uptime
+  bot.locationChatLog = [];      // ← Added: store raw chat messages for location checks
   bots[accountConfig.username] = bot;
 
   bot.shards = null;
-  bot.keys = null; // Separate storage for crate keys
+  bot.keys = null;
 
-  // Chat parser for shards AND keys
   bot.on('message', (jsonMsg) => {
     const text = jsonMsg.toString().trim().toLowerCase();
     console.log('[CHAT RAW]', text);
@@ -130,7 +131,7 @@ function createBot(accountConfig) {
       }
     }
 
-    // Key detection (separate from shards)
+    // Key detection
     const keyRegex = /(?:received|got|claimed|earned)\s*(\d+)\s*(?:crate\s*key|key)/i;
     const keyMatch = text.match(keyRegex);
     if (keyMatch && keyMatch[1]) {
@@ -148,12 +149,11 @@ function createBot(accountConfig) {
     if (cfg.plugins && cfg.plugins.antiAfk) antiAfk(bot);
     if (cfg.plugins && cfg.plugins.randomMove) randomMove(bot);
     if (cfg.plugins && cfg.plugins.chatLogger) chatLogger(bot);
-    // AutoLobby (now handles /warp afk with AFK check)
     if (cfg.plugins && cfg.plugins.autoLobby) {
       setTimeout(() => autoLobby(bot), 2000);
     } else if (cfg.plugins && cfg.plugins.autoSpawnCommand) {
       setTimeout(() => {
-        bot.chat('/warp afk'); // Fallback uses /warp afk
+        bot.chat('/warp afk');
         setTimeout(() => bot.chat('/lobby'), 3000);
       }, 5000);
     }
@@ -165,7 +165,7 @@ function createBot(accountConfig) {
         bot.chat('/shards');
         logger.info(`[SHARDS] Login query sent for ${bot.username || accountConfig.username}`);
       }
-    }, 8000); // delay for full login
+    }, 8000);
   });
 
   bot.on('death', () => {
