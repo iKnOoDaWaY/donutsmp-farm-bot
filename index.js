@@ -41,6 +41,7 @@ if (getConfig().web && getConfig().web.enabled) {
 function broadcastBotsStatus() {
   const cfg = getConfig();
   if (!cfg.web || !cfg.web.enabled) return;
+
   const statuses = {};
   for (const name of Object.keys(bots)) {
     const bot = bots[name];
@@ -52,6 +53,7 @@ function broadcastBotsStatus() {
       online: !!bot?.entity,
       statusColor: bot?.entity ? '#00ff00' : '#ff0000',
       shards: bot.shards ?? 'Unknown',
+      keys: bot.keys ?? 'Unknown', // Separate key count
       uptime: bot?.entity ? Math.floor((Date.now() - bot.sessionStart) / 1000) : 0,
       health: bot?.health ?? 'N/A',
       food: bot?.food ?? 'N/A',
@@ -60,6 +62,7 @@ function broadcastBotsStatus() {
       proxy: bot?.options?.agent ? 'Yes' : 'No'
     };
   }
+
   io.emit('bots', statuses);
 }
 
@@ -77,16 +80,16 @@ function createBot(accountConfig) {
     version: cfgBot.version,
     username: accountConfig.username,
     auth: accountConfig.auth,
-    skipValidation: true  // Helps with PartialReadError
+    skipValidation: true, // Helps with PartialReadError on 1.20.5+
   };
 
   if (accountConfig.proxy) {
     try {
       botOptions.agent = new SocksProxyAgent(accountConfig.proxy, {
-        timeout: 60000,           // 60 seconds timeout
+        timeout: 60000,
         keepAlive: true,
         keepAliveMsecs: 2000,
-        retries: 3                // Retry 3 times
+        retries: 3
       });
       logger.info(`Proxy enabled for ${accountConfig.username}: ${accountConfig.proxy}`);
     } catch (proxyErr) {
@@ -100,19 +103,21 @@ function createBot(accountConfig) {
   bot.sessionStart = Date.now(); // For uptime calculation
   bots[accountConfig.username] = bot;
 
-  bot.shards = null; // Shard count storage
+  bot.shards = null;
+  bot.keys = null; // Separate storage for crate keys
 
-  // Improved chat parser for shards (ignores small numbers from AFK messages)
+  // Chat parser for shards AND keys
   bot.on('message', (jsonMsg) => {
     const text = jsonMsg.toString().trim().toLowerCase();
+    console.log('[CHAT RAW]', text);
 
-    // Priority 1: Catch formatted "your shards: 2.62k" / "shards : 2.62K" / etc.
-    const formattedRegex = /(?:your\s*shards\s*[:=-]\s*|shards\s*[:=-]\s*|\b)([\d.]+)([kmb]?)/i;
-    const formattedMatch = text.match(formattedRegex);
-    if (formattedMatch && formattedMatch[1]) {
-      let numStr = formattedMatch[1];
+    // Shard detection
+    const shardRegex = /(?:your\s*shards\s*[:=-]\s*|shards\s*[:=-]\s*|\b)([\d.]+)([kmb]?)/i;
+    const shardMatch = text.match(shardRegex);
+    if (shardMatch && shardMatch[1]) {
+      let numStr = shardMatch[1];
       let multiplier = 1;
-      const suffix = formattedMatch[2].toLowerCase();
+      const suffix = shardMatch[2].toLowerCase();
       if (suffix === 'k') multiplier = 1000;
       else if (suffix === 'm') multiplier = 1000000;
       else if (suffix === 'b') multiplier = 1000000000;
@@ -120,20 +125,19 @@ function createBot(accountConfig) {
       if (!isNaN(number)) {
         const final = Math.round(number * multiplier);
         bot.shards = final;
-        console.log(`[SHARDS UPDATE] Formatted match: ${final} (from "${formattedMatch[0]}") for ${bot.username || accountConfig.username}`);
-        return; // Stop here - we have the correct value
+        console.log(`[SHARDS] ${bot.username} → ${final}`);
+        return;
       }
     }
 
-    // Priority 2: Only fallback to plain number if no formatted match (skip very small numbers)
-    const plainMatch = text.match(/\b(\d+)\b/);
-    if (plainMatch && plainMatch[1]) {
-      const count = parseInt(plainMatch[1], 10);
-      // Ignore tiny numbers like "2" or "57" that are likely not the real balance
-      if (count >= 100 && count < 10000000) {
-        bot.shards = count;
-        console.log(`[SHARDS UPDATE] Plain fallback: ${count} for ${bot.username || accountConfig.username}`);
-      }
+    // Key detection (separate from shards)
+    const keyRegex = /(?:received|got|claimed|earned)\s*(\d+)\s*(?:crate\s*key|key)/i;
+    const keyMatch = text.match(keyRegex);
+    if (keyMatch && keyMatch[1]) {
+      const keyCount = parseInt(keyMatch[1], 10);
+      bot.keys = (bot.keys || 0) + keyCount;
+      console.log(`[KEYS] ${bot.username} +${keyCount} keys (total: ${bot.keys})`);
+      return;
     }
   });
 
@@ -144,11 +148,12 @@ function createBot(accountConfig) {
     if (cfg.plugins && cfg.plugins.antiAfk) antiAfk(bot);
     if (cfg.plugins && cfg.plugins.randomMove) randomMove(bot);
     if (cfg.plugins && cfg.plugins.chatLogger) chatLogger(bot);
+    // AutoLobby (now handles /warp afk with AFK check)
     if (cfg.plugins && cfg.plugins.autoLobby) {
       setTimeout(() => autoLobby(bot), 2000);
     } else if (cfg.plugins && cfg.plugins.autoSpawnCommand) {
       setTimeout(() => {
-        bot.chat('/spawn');
+        bot.chat('/warp afk'); // Fallback uses /warp afk
         setTimeout(() => bot.chat('/lobby'), 3000);
       }, 5000);
     }
@@ -215,16 +220,15 @@ function startBots() {
   if (!accounts || accounts.length === 0) {
     if (cfg.account) accounts = [cfg.account];
     else {
-      logger.error('No accounts configured in config/config.json');
+      logger.error('No accounts in config/config.json');
       return;
     }
   }
 
   console.log('🚀 Starting bots with staggered random delays...');
 
-  // Delay ranges per bot (in seconds) - customize here
   const delayRanges = [
-    { min: 5,  max: 20 },
+    { min: 5, max: 20 },
     { min: 15, max: 40 },
     { min: 25, max: 60 },
     { min: 40, max: 90 },
