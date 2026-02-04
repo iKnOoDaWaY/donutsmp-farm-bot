@@ -1,3 +1,4 @@
+// Full corrected index.js (with staggered delays, proxy timeout, skipValidation, live stats broadcast, etc.)
 const mineflayer = require('mineflayer');
 const express = require('express');
 const http = require('http');
@@ -50,6 +51,7 @@ function broadcastBotsStatus() {
       configUsername: name,
       minecraftUsername: bot?.username || 'Offline',
       online: !!bot?.entity,
+      statusColor: bot?.entity ? '#00ff00' : '#ff0000',
       shards: bot.shards ?? 'Unknown',
       uptime: bot?.entity ? Math.floor((Date.now() - bot.sessionStart) / 1000) : 0,
       health: bot?.health ?? 'N/A',
@@ -70,30 +72,28 @@ function createBot(accountConfig) {
   const cfgBot = serverConfig.server;
   logger.info(`Starting bot for ${accountConfig.username}…`);
 
-const botOptions = {
-  host: cfgBot.host,
-  port: cfgBot.port,
-  version: '1.21',
-  skipValidation: true,
-  username: accountConfig.username,
-  auth: accountConfig.auth
-};
+  const botOptions = {
+    host: cfgBot.host,
+    port: cfgBot.port,
+    version: cfgBot.version,
+    username: accountConfig.username,
+    auth: accountConfig.auth
+  };
 
-if (accountConfig.proxy) {
-  try {
-    botOptions.agent = new SocksProxyAgent(accountConfig.proxy, {
-      timeout: 60000,
-      keepAlive: true,
-      keepAliveMsecs: 2000,
-      retries: 5
-    });
-    logger.info(`Proxy enabled for ${accountConfig.username}: ${accountConfig.proxy} (60s timeout, 5 retries)`);
-  } catch (proxyErr) {
-    logger.error(`Failed to set proxy for ${accountConfig.username}: ${proxyErr.message}`);
+  if (accountConfig.proxy) {
+    try {
+      botOptions.agent = new SocksProxyAgent(accountConfig.proxy, {
+        timeout: 30000, // 30s timeout
+        keepAlive: true,
+        keepAliveMsecs: 1000
+      });
+      logger.info(`Proxy enabled for ${accountConfig.username}: ${accountConfig.proxy}`);
+    } catch (proxyErr) {
+      logger.error(`Failed to set proxy for ${accountConfig.username}: ${proxyErr.message}`);
+    }
+  } else {
+    logger.info(`No proxy for ${accountConfig.username} — direct connection`);
   }
-} else {
-  logger.info(`No proxy for ${accountConfig.username} — direct connection`);
-}
 
   const bot = mineflayer.createBot(botOptions);
   bot.sessionStart = Date.now(); // For uptime calculation
@@ -225,11 +225,11 @@ function startBots() {
 
   // Delay ranges per bot (in seconds) - customize here
   const delayRanges = [
-    { min: 5, max: 20 },
-    { min: 15, max: 40 },
-    { min: 25, max: 60 },
-    { min: 40, max: 90 },
-    { min: 60, max: 120 }
+    { min: 5,  max: 20 },   // Bot 1
+    { min: 15, max: 40 },   // Bot 2
+    { min: 25, max: 60 },   // Bot 3
+    { min: 40, max: 90 },   // Bot 4
+    { min: 60, max: 120 }   // Bot 5
   ];
 
   accounts.forEach((acc, index) => {

@@ -36,6 +36,11 @@ socket.on('bots', data => {
 // Append incoming chat messages to the appropriate log and, if
 // currently selected, to the visible chat area. All chat events
 // carry the name of the bot they originated from.
+// Maintenance result listener for console
+socket.on('maintenance-result', (data) => {
+  console.log(`[MAINTENANCE RESPONSE] ${data.message}`);
+});
+
 socket.on('chat', ({ username, botUsername, chatUsername, message }) => {
   if (!messageLogs[username]) {
     messageLogs[username] = [];
