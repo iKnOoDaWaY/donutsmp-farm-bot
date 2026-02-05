@@ -3,7 +3,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const { SocksProxyAgent } = require('socks-proxy-agent');
-const { mineflayer: mineflayerViewer } = require('prismarine-viewer'); // Added for viewer
+const { mineflayer: mineflayerViewer } = require('prismarine-viewer');
 
 const serverConfig = require('./config/bot.config');
 const logger = require('./utils/logger');
@@ -30,9 +30,10 @@ const io = new Server(server);
 
 app.use(express.static(__dirname + '/web/public'));
 
-if (getConfig().plugins && getConfig().plugins.autoReconnect) {
-  server.listen(getConfig().web.port, () => {
-    logger.success(`Web dashboard running on port ${getConfig().web.port}`);
+const cfg = getConfig();
+if (cfg.web && cfg.web.enabled) {
+  server.listen(cfg.web.port, () => {
+    logger.success(`Web dashboard running on port ${cfg.web.port}`);
   });
 }
 
@@ -67,14 +68,50 @@ function broadcastBotsStatus() {
 }
 
 /**
+ * Start viewer for a bot
+ */
+function startViewerForBot(bot) {
+  if (bot.viewerRunning) return;
+  bot.waitForChunksToLoad(() => {
+    try {
+      const viewer = mineflayerViewer(bot, {
+        port: bot.viewerPort,
+        firstPerson: false,
+        viewDistance: 6
+      });
+      bot.viewerInstance = viewer;
+      bot.viewerRunning = true;
+      logger.success(`[VIEWER] Started for ${bot.username} on http://localhost:${bot.viewerPort}`);
+      broadcastBotsStatus();
+    } catch (err) {
+      logger.error(`[VIEWER] Failed to start for ${bot.username}: ${err.message}`);
+    }
+  });
+}
+
+/**
+ * Stop viewer for a bot
+ */
+function stopViewerForBot(bot) {
+  if (!bot.viewerRunning || !bot.viewerInstance) return;
+  try {
+    bot.viewerInstance.close();
+    bot.viewerInstance = null;
+    bot.viewerRunning = false;
+    logger.success(`[VIEWER] Stopped for ${bot.username}`);
+    broadcastBotsStatus();
+  } catch (err) {
+    logger.error(`[VIEWER] Failed to stop for ${bot.username}: ${err.message}`);
+  }
+}
+
+/**
  * Create and initialise a bot for the given account.
  */
 function createBot(accountConfig) {
   const cfgBot = serverConfig.server;
-  const cfg = getConfig();  // ← ADD THIS LINE HERE (top of function)
-
+  const cfg = getConfig();
   logger.info(`Starting bot for ${accountConfig.username}…`);
-
   const botOptions = {
     host: cfgBot.host,
     port: cfgBot.port,
@@ -83,7 +120,6 @@ function createBot(accountConfig) {
     auth: accountConfig.auth,
     skipValidation: true
   };
-
   if (accountConfig.proxy) {
     try {
       botOptions.agent = new SocksProxyAgent(accountConfig.proxy, {
@@ -99,61 +135,52 @@ function createBot(accountConfig) {
   } else {
     logger.info(`No proxy for ${accountConfig.username} — direct connection`);
   }
-
   const bot = mineflayer.createBot(botOptions);
   bot.sessionStart = Date.now();
   bots[accountConfig.username] = bot;
   bot.shards = null;
   bot.keys = null;
-
   // Viewer setup (off by default)
   bot.viewerPort = 3001 + Object.keys(bots).length - 1;
   bot.viewerRunning = false;
   bot.viewerInstance = null;
-  
-  // Viewer bot Start and stop
-  function startViewerForBot(bot) {
-  if (bot.viewerRunning) return;
-  bot.waitForChunksToLoad(() => {
-    try {
-      const viewer = mineflayerViewer(bot, {
-        port: bot.viewerPort,
-        firstPerson: false,
-        viewDistance: 6
-      });
-      bot.viewerInstance = viewer;
-      bot.viewerRunning = true;
-      logger.success(`Viewer started for ${bot.username} → http://localhost:${bot.viewerPort}`);
-      broadcastBotsStatus();
-    } catch (err) {
-      logger.error(`Failed to start viewer: ${err.message}`);
-    }
-  });
-}
 
-function stopViewerForBot(bot) {
-  if (!bot.viewerRunning || !bot.viewerInstance) return;
-  try {
-    bot.viewerInstance.close();
-    bot.viewerInstance = null;
-    bot.viewerRunning = false;
-    logger.success(`Viewer stopped for ${bot.username}`);
-    broadcastBotsStatus();
-  } catch (err) {
-    logger.error(`Failed to stop viewer: ${err.message}`);
-  }
-} 
-//Viewer bot Start and stop - End
-
-  // Chat parser...
+  // Chat parser for shards AND keys
   bot.on('message', (jsonMsg) => {
-    // ... your existing shard/key parser ...
+    const text = jsonMsg.toString().trim().toLowerCase();
+    console.log('[CHAT RAW]', text);
+    // Shard detection
+    const shardRegex = /(?:your\s*shards\s*[:=-]\s*|shards\s*[:=-]\s*|\b)([\d.]+)([kmb]?)/i;
+    const shardMatch = text.match(shardRegex);
+    if (shardMatch && shardMatch[1]) {
+      let numStr = shardMatch[1];
+      let multiplier = 1;
+      const suffix = shardMatch[2].toLowerCase();
+      if (suffix === 'k') multiplier = 1000;
+      else if (suffix === 'm') multiplier = 1000000;
+      else if (suffix === 'b') multiplier = 1000000000;
+      const number = parseFloat(numStr);
+      if (!isNaN(number)) {
+        const final = Math.round(number * multiplier);
+        bot.shards = final;
+        console.log(`[SHARDS] ${bot.username} → ${final}`);
+        return;
+      }
+    }
+    // Key detection
+    const keyRegex = /(?:received|got|claimed|earned)\s*(\d+)\s*(?:crate\s*key|key)/i;
+    const keyMatch = text.match(keyRegex);
+    if (keyMatch && keyMatch[1]) {
+      const keyCount = parseInt(keyMatch[1], 10);
+      bot.keys = (bot.keys || 0) + keyCount;
+      console.log(`[KEYS] ${bot.username} +${keyCount} keys (total: ${bot.keys})`);
+      return;
+    }
   });
 
   bot.once('spawn', () => {
     logger.success(`Bot ${bot.username} spawned`);
 
-    // You can still use cfg here safely now
     if (cfg.plugins && cfg.plugins.antiAfk) antiAfk(bot);
     if (cfg.plugins && cfg.plugins.randomMove) randomMove(bot);
     if (cfg.plugins && cfg.plugins.chatLogger) chatLogger(bot);
@@ -167,12 +194,6 @@ function stopViewerForBot(bot) {
     }
 
     broadcastBotsStatus();
-	
-	statuses[name] = {
-  // ... existing fields ...
-  viewerPort: bot?.viewerPort || null,
-  viewerRunning: bot?.viewerRunning || false
-  };
 
     setTimeout(() => {
       if (bot.entity) {
@@ -200,7 +221,6 @@ function stopViewerForBot(bot) {
     }
   });
 
-  // FIXED LINE HERE
   if (cfg.plugins && cfg.plugins.autoReconnect) {
     autoReconnect(bot, () => {
       logger.info(`Recreating bot for ${accountConfig.username}…`);
@@ -224,29 +244,6 @@ function stopViewerForBot(bot) {
     }
   }, 3 * 60 * 60 * 1000);
 }
-
-/**
- * Start viewer for a bot
- */
-function startViewerForBot(bot) {
-  if (bot.viewerRunning) return;
-  bot.waitForChunksToLoad(() => {
-    try {
-      const viewer = mineflayerViewer(bot, {
-        port: bot.viewerPort,
-        firstPerson: false,
-        viewDistance: 6
-      });
-      bot.viewerInstance = viewer;
-      bot.viewerRunning = true;
-      logger.success(`[VIEWER] Started for ${bot.username} on http://localhost:${bot.viewerPort}`);
-      broadcastBotsStatus();
-    } catch (err) {
-      logger.error(`[VIEWER] Failed to start for ${bot.username}: ${err.message}`);
-    }
-  });
-}
-
 
 /**
  * Launch bots with staggered random delays.
@@ -281,9 +278,10 @@ function startBots() {
   });
 }
 
-// Socket.io connection handling
+// Socket.io connection handling (single block)
 io.on('connection', socket => {
   broadcastBotsStatus();
+
   socket.on('sendMessage', data => {
     const cfg = getConfig();
     if (!cfg.web || !cfg.web.allowWebChat) return;
@@ -294,10 +292,8 @@ io.on('connection', socket => {
     if (data.message.length > 100) return;
     targetBot.chat(data.message.trim());
   });
-  // Viewer toggle commands
-  io.on('connection', socket => {
-  // ... existing code ...
 
+  // Viewer controls
   socket.on('startViewer', (data) => {
     const bot = bots[data.username];
     if (bot) startViewerForBot(bot);
@@ -308,7 +304,6 @@ io.on('connection', socket => {
     if (bot) stopViewerForBot(bot);
   });
 });
-  
 
 // Start everything
 startBots();

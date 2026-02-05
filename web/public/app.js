@@ -219,3 +219,59 @@ function appendChat(botUsername, chatUsername, message) {
     chatEl.scrollTop = chatEl.scrollHeight;
   }
 }
+
+function updateViewerControls() {
+  const status = botsStatus[selectedBot];
+  const controls = document.getElementById('viewer-controls');
+  if (!controls || !status || !status.online) {
+    if (controls) controls.innerHTML = '';
+    return;
+  }
+
+  controls.innerHTML = '';
+
+  // Toggle button
+  const toggleBtn = document.createElement('button');
+  toggleBtn.textContent = status.viewerRunning ? 'Stop Viewer' : 'Start Viewer';
+  toggleBtn.style.padding = '8px 16px';
+  toggleBtn.style.marginRight = '10px';
+  toggleBtn.style.backgroundColor = status.viewerRunning ? '#e74c3c' : '#2ecc71';
+  toggleBtn.style.color = 'white';
+  toggleBtn.style.border = 'none';
+  toggleBtn.style.borderRadius = '4px';
+  toggleBtn.style.cursor = 'pointer';
+  toggleBtn.onclick = () => {
+    socket.emit(status.viewerRunning ? 'stopViewer' : 'startViewer', { username: selectedBot });
+  };
+  controls.appendChild(toggleBtn);
+
+  // Open button
+  const openBtn = document.createElement('button');
+  openBtn.textContent = 'Open Viewer';
+  openBtn.style.padding = '8px 16px';
+  openBtn.style.backgroundColor = status.viewerRunning ? '#3498db' : '#95a5a6';
+  openBtn.style.color = 'white';
+  openBtn.style.border = 'none';
+  openBtn.style.borderRadius = '4px';
+  openBtn.disabled = !status.viewerRunning;
+  openBtn.onclick = () => {
+    if (status.viewerRunning && status.viewerPort) {
+      window.open(`http://localhost:${status.viewerPort}`, '_blank');
+    }
+  };
+  controls.appendChild(openBtn);
+}
+
+// Hook it into existing updates
+// Add these two calls:
+socket.on('bots', data => {
+  // ... your existing code ...
+  updateUI();
+  updateViewerControls();   // ← add this
+});
+
+botSelect.addEventListener('change', () => {
+  // ... your existing code ...
+  updateUI();
+  updateViewerControls();   // ← add this
+});
