@@ -129,97 +129,6 @@ function updateUI() {
 /**
  * Show/update viewer buttons in the card
  */
-function showViewerButtons(isRunning, port) {
-  let toggleBtn = document.getElementById('toggle-viewer');
-  let openBtn = document.getElementById('open-viewer');
-
-  if (!toggleBtn) {
-    toggleBtn = document.createElement('button');
-    toggleBtn.id = 'toggle-viewer';
-    toggleBtn.style.marginTop = '10px';
-    toggleBtn.style.marginRight = '10px';
-    toggleBtn.style.padding = '8px 12px';
-    toggleBtn.style.borderRadius = '4px';
-    toggleBtn.style.border = 'none';
-    toggleBtn.style.cursor = 'pointer';
-
-    openBtn = document.createElement('button');
-    openBtn.id = 'open-viewer';
-    openBtn.textContent = 'Open Viewer';
-    openBtn.style.marginTop = '10px';
-    openBtn.style.padding = '8px 12px';
-    openBtn.style.borderRadius = '4px';
-    openBtn.style.border = 'none';
-    openBtn.style.cursor = 'pointer';
-
-    // Append to card
-    const card = document.querySelector('.card');
-    if (card) {
-      card.appendChild(toggleBtn);
-      card.appendChild(openBtn);
-    }
-  }
-
-  // Toggle button
-  toggleBtn.textContent = isRunning ? 'Stop Viewer' : 'Start Viewer';
-  toggleBtn.style.backgroundColor = isRunning ? '#f44336' : '#4CAF50';
-  toggleBtn.style.color = 'white';
-  toggleBtn.onclick = () => {
-    socket.emit(isRunning ? 'stopViewer' : 'startViewer', { username: selectedBot });
-  };
-
-  // Open button
-  openBtn.style.backgroundColor = isRunning ? '#2196F3' : '#ccc';
-  openBtn.style.color = isRunning ? 'white' : '#666';
-  openBtn.disabled = !isRunning;
-  openBtn.onclick = () => {
-    if (isRunning && port) {
-      window.open(`http://localhost:${port}`, '_blank');
-    }
-  };
-}
-
-/**
- * Hide viewer buttons
- */
-function hideViewerButtons() {
-  const toggleBtn = document.getElementById('toggle-viewer');
-  const openBtn = document.getElementById('open-viewer');
-  if (toggleBtn) toggleBtn.remove();
-  if (openBtn) openBtn.remove();
-}
-
-/**
- * Render the full chat history for the currently selected bot. This
- * clears the chat element and appends all messages stored for
- * selectedBot. Called when switching between bots.
- */
-function renderChat() {
-  chatEl.innerHTML = '';
-  const logs = messageLogs[selectedBot] || [];
-  for (const entry of logs) {
-    const div = document.createElement('div');
-    div.textContent = `<${entry.botUsername}> | ${entry.chatUsername} : ${entry.message}`;
-    chatEl.appendChild(div);
-  }
-  chatEl.scrollTop = chatEl.scrollHeight;
-}
-
-/**
- * Append a single chat line to the visible chat area. Performs
- * auto‑scrolling if the user is already at the bottom of the
- * chat.
- */
-function appendChat(botUsername, chatUsername, message) {
-  const shouldScroll = chatEl.scrollTop + chatEl.clientHeight >= chatEl.scrollHeight - 50;
-  const div = document.createElement('div');
-  div.textContent = `<${botUsername}> | ${chatUsername} : ${message}`;
-  chatEl.appendChild(div);
-  if (shouldScroll) {
-    chatEl.scrollTop = chatEl.scrollHeight;
-  }
-}
-
 function updateViewerControls() {
   const status = botsStatus[selectedBot];
   const controls = document.getElementById('viewer-controls');
@@ -230,7 +139,6 @@ function updateViewerControls() {
 
   controls.innerHTML = '';
 
-  // Toggle button
   const toggleBtn = document.createElement('button');
   toggleBtn.textContent = status.viewerRunning ? 'Stop Viewer' : 'Start Viewer';
   toggleBtn.style.padding = '8px 16px';
@@ -245,7 +153,6 @@ function updateViewerControls() {
   };
   controls.appendChild(toggleBtn);
 
-  // Open button
   const openBtn = document.createElement('button');
   openBtn.textContent = 'Open Viewer';
   openBtn.style.padding = '8px 16px';
@@ -262,16 +169,9 @@ function updateViewerControls() {
   controls.appendChild(openBtn);
 }
 
-// Hook it into existing updates
-// Add these two calls:
-socket.on('bots', data => {
-  // ... your existing code ...
-  updateUI();
-  updateViewerControls();   // ← add this
-});
+// Call this function in existing update places
+// Add inside socket.on('bots', ...) after updateUI():
+updateViewerControls();
 
-botSelect.addEventListener('change', () => {
-  // ... your existing code ...
-  updateUI();
-  updateViewerControls();   // ← add this
-});
+// Add inside botSelect.addEventListener('change', ...) after updateUI():
+updateViewerControls();
