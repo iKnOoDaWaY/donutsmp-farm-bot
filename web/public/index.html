@@ -161,18 +161,19 @@
 
 <script>
   const socket = io();
+
   socket.on('connect', () => {
     console.log('Connected to socket.io');
   });
 
-  // Live bot stats update
   socket.on('bots', (botsData) => {
     const grid = document.getElementById('bot-grid');
     grid.innerHTML = '';
+
     Object.entries(botsData).forEach(([configName, bot]) => {
       const card = document.createElement('div');
       card.className = 'bot-card';
-      // Countdown display with low-time warning
+
       let countdownText = bot.nextShardCountdown !== null ? bot.nextShardCountdown + 's' : 'Offline';
       let countdownClass = (bot.nextShardCountdown !== null && bot.nextShardCountdown <= 10) ? 'countdown-low' : '';
 
@@ -194,22 +195,27 @@
           <span class="label">Next Shard:</span> ${countdownText}
         </div>
 
-        <div class="control-buttons">
-          <button class="control-btn disconnect" onclick="controlBot('${configName}', 'disconnect')">Disconnect</button>
-          <button class="control-btn reconnect" onclick="controlBot('${configName}', 'reconnect')">Reconnect</button>
-        </div>
-
-        <!-- Viewer controls -->
+        <!-- Viewer controls - only if online -->
         ${bot.online ? `
-          <div style="margin-top: 15px;">
-            <button class="control-btn" style="background: $$   {bot.viewerRunning ? '#d73a49' : '#238636'}; color: white;" onclick="   $${bot.viewerRunning ? `stopViewer('${configName}')` : `startViewer('${configName}')`}">
+          <div class="control-buttons" style="margin-top: 15px; gap: 10px;">
+            <button class="control-btn" 
+                    style="background: ${bot.viewerRunning ? '#d73a49' : '#238636'}; color: white;"
+                    onclick="${bot.viewerRunning ? `stopViewer('${configName}')` : `startViewer('${configName}')`}">
               ${bot.viewerRunning ? 'Stop Viewer' : 'Start Viewer'}
             </button>
-            <button class="control-btn" style="background: ${bot.viewerRunning ? '#1f6feb' : '#444d56'}; color: white;" $$   {bot.viewerRunning ? '' : 'disabled'} onclick="openViewer('   $${bot.viewerPort}')">
+            <button class="control-btn" 
+                    style="background: ${bot.viewerRunning ? '#1f6feb' : '#444d56'}; color: white;"
+                    ${bot.viewerRunning && bot.viewerPort ? '' : 'disabled'}
+                    onclick="openViewer('${bot.viewerPort}')">
               Open Viewer
             </button>
           </div>
         ` : ''}
+
+        <div class="control-buttons">
+          <button class="control-btn disconnect" onclick="controlBot('${configName}', 'disconnect')">Disconnect</button>
+          <button class="control-btn reconnect" onclick="controlBot('${configName}', 'reconnect')">Reconnect</button>
+        </div>
 
         <div class="chat-per-bot">
           <input type="text" class="chat-input-small" id="chat-${configName}" placeholder="Message to ${bot.minecraftUsername || configName}" />

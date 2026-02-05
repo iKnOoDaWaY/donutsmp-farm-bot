@@ -119,7 +119,7 @@ function createBot(accountConfig) {
     username: accountConfig.username,
     auth: accountConfig.auth,
     skipValidation: true
-	compress: false,
+	//compress: false,
   };
   if (accountConfig.proxy) {
     try {
@@ -181,6 +181,16 @@ function createBot(accountConfig) {
 
   bot.once('spawn', () => {
     logger.success(`Bot ${bot.username} spawned`);
+	setTimeout(() => {
+    const sidebar = bot.scoreboard.sidebar; // or bot.scoreboard['sidebar']
+    if (sidebar) {
+      console.log('Sidebar title:', sidebar.title);
+
+      const lines = Object.values(sidebar.itemsMap)
+        .sort((a, b) => b.value - a.value)   // highest score first
+        .map(item => item.name);             // the displayed text
+
+      console.log('Sidebar lines:', lines);
 
     if (cfg.plugins && cfg.plugins.antiAfk) antiAfk(bot);
     if (cfg.plugins && cfg.plugins.randomMove) randomMove(bot);
@@ -190,7 +200,7 @@ function createBot(accountConfig) {
     } else if (cfg.plugins && cfg.plugins.autoSpawnCommand) {
       setTimeout(() => {
         bot.chat('/warp afk');
-        setTimeout(() => bot.chat('/lobby'), 3000);
+        //setTimeout(() => bot.chat('/lobby'), 3000);
       }, 5000);
     }
 
@@ -198,11 +208,37 @@ function createBot(accountConfig) {
 
     setTimeout(() => {
       if (bot.entity) {
-        bot.chat('/shards');
+        //bot.chat('/shards');  //Removed 
         logger.info(`[SHARDS] Login query sent for ${bot.username || accountConfig.username}`);
       }
     }, 8000);
   });
+  
+  setTimeout(() => {
+    const sidebar = bot.scoreboard.sidebar;  // or bot.scoreboard['sidebar']
+
+    if (sidebar) {
+      console.log('Sidebar title:', sidebar.title);
+
+      // The actual lines (ordered by score descending)
+      const lines = Object.values(sidebar.itemsMap)
+        .sort((a, b) => b.value - a.value)   // highest score first
+        .map(item => item.name);             // the text shown
+
+      console.log('Sidebar lines:', lines);
+
+      // Example output might be:
+      // [
+      //   "§b$ Money 44.85M",
+      //   "§d★ Shards 1.55k",
+      //   "✗ Kills 5",
+      //   ...
+      // ]
+    } else {
+      console.log('No sidebar scoreboard found yet');
+    }
+  }, 3000); // wait 3 seconds after spawn
+ });
 
   bot.on('death', () => {
     if (cfg.plugins && cfg.plugins.autoRespawn) {
