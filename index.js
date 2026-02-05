@@ -119,6 +119,7 @@ function createBot(accountConfig) {
     username: accountConfig.username,
     auth: accountConfig.auth,
     skipValidation: true
+	compress: false,
   };
   if (accountConfig.proxy) {
     try {
