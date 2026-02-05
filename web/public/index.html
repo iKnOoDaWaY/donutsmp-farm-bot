@@ -200,12 +200,12 @@
         <div class="stat-line ${countdownClass}">
           <span class="label">Next Shard:</span> ${countdownText}
         </div>
-		<div id="viewer-controls" style="margin-top: 15px;">
-		</div>
         <div class="control-buttons">
           <button class="control-btn disconnect" onclick="controlBot('${configName}', 'disconnect')">Disconnect</button>
           <button class="control-btn reconnect" onclick="controlBot('${configName}', 'reconnect')">Reconnect</button>
         </div>
+		<div id="viewer-controls" style="margin-top: 15px;">
+		</div>
 
         <div class="chat-per-bot">
           <input type="text" class="chat-input-small" id="chat-${configName}" placeholder="Message to ${bot.minecraftUsername || configName}" />
