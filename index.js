@@ -3,8 +3,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const { SocksProxyAgent } = require('socks-proxy-agent');
-// const { viewer } = require('prismarine-viewer'); // Uncomment when canvas is installed
-const { mineflayer: mineflayerViewer } = require('prismarine-viewer');
+const { mineflayer: mineflayerViewer } = require('prismarine-viewer'); // Added for viewer
 
 const serverConfig = require('./config/bot.config');
 const logger = require('./utils/logger');
@@ -31,7 +30,7 @@ const io = new Server(server);
 
 app.use(express.static(__dirname + '/web/public'));
 
-if (getConfig().web && getConfig().web.enabled) {
+if (getConfig().plugins && getConfig().plugins.autoReconnect) {
   server.listen(getConfig().web.port, () => {
     logger.success(`Web dashboard running on port ${getConfig().web.port}`);
   });
@@ -43,12 +42,10 @@ if (getConfig().web && getConfig().web.enabled) {
 function broadcastBotsStatus() {
   const cfg = getConfig();
   if (!cfg.web || !cfg.web.enabled) return;
-
   const statuses = {};
   for (const name of Object.keys(bots)) {
     const bot = bots[name];
     const status = getBotStatus(bot, cfg) || {};
-
     statuses[name] = {
       configUsername: name,
       minecraftUsername: bot?.username || 'Offline',
@@ -62,10 +59,10 @@ function broadcastBotsStatus() {
       dimension: bot?.game?.dimension ?? 'N/A',
       position: bot?.entity?.position ? `${Math.floor(bot.entity.position.x)}, ${Math.floor(bot.entity.position.y)}, ${Math.floor(bot.entity.position.z)}` : 'N/A',
       proxy: bot?.options?.agent ? 'Yes' : 'No',
-      viewerPort: bot?.viewerPort || null // For "View" button
+      viewerPort: bot?.viewerPort || null,
+      viewerRunning: bot?.viewerRunning || false
     };
   }
-
   io.emit('bots', statuses);
 }
 
@@ -74,6 +71,8 @@ function broadcastBotsStatus() {
  */
 function createBot(accountConfig) {
   const cfgBot = serverConfig.server;
+  const cfg = getConfig();  // ← ADD THIS LINE HERE (top of function)
+
   logger.info(`Starting bot for ${accountConfig.username}…`);
 
   const botOptions = {
@@ -82,7 +81,7 @@ function createBot(accountConfig) {
     version: cfgBot.version,
     username: accountConfig.username,
     auth: accountConfig.auth,
-    skipValidation: true // Helps with PartialReadError on 1.20.5+
+    skipValidation: true
   };
 
   if (accountConfig.proxy) {
@@ -102,66 +101,25 @@ function createBot(accountConfig) {
   }
 
   const bot = mineflayer.createBot(botOptions);
-  bot.sessionStart = Date.now(); // For uptime calculation
+  bot.sessionStart = Date.now();
   bots[accountConfig.username] = bot;
-
   bot.shards = null;
   bot.keys = null;
 
-// Prismarine Viewer HERE
-    const viewerPort = 3001 + Object.keys(bots).length;
-    bot.viewerPort = viewerPort;
+  // Viewer setup (off by default)
+  bot.viewerPort = 3001 + Object.keys(bots).length - 1;
+  bot.viewerRunning = false;
+  bot.viewerInstance = null;
 
-    try {
-      mineflayerViewer(bot, {
-        port: viewerPort,
-        firstPerson: false,
-        viewDistance: 6
-      });
-      logger.success(`[VIEWER] Started for ${bot.username} → http://localhost:${viewerPort}`);
-    } catch (err) {
-      logger.error(`[VIEWER] Failed to start viewer for ${bot.username}: ${err.message}`);
-    }
-
-  // Chat parser for shards AND keys
+  // Chat parser...
   bot.on('message', (jsonMsg) => {
-    const text = jsonMsg.toString().trim().toLowerCase();
-    console.log('[CHAT RAW]', text);
-
-    // Shard detection
-    const shardRegex = /(?:your\s*shards\s*[:=-]\s*|shards\s*[:=-]\s*|\b)([\d.]+)([kmb]?)/i;
-    const shardMatch = text.match(shardRegex);
-    if (shardMatch && shardMatch[1]) {
-      let numStr = shardMatch[1];
-      let multiplier = 1;
-      const suffix = shardMatch[2].toLowerCase();
-      if (suffix === 'k') multiplier = 1000;
-      else if (suffix === 'm') multiplier = 1000000;
-      else if (suffix === 'b') multiplier = 1000000000;
-      const number = parseFloat(numStr);
-      if (!isNaN(number)) {
-        const final = Math.round(number * multiplier);
-        bot.shards = final;
-        console.log(`[SHARDS] ${bot.username} → ${final}`);
-        return;
-      }
-    }
-
-    // Key detection
-    const keyRegex = /(?:received|got|claimed|earned)\s*(\d+)\s*(?:crate\s*key|key)/i;
-    const keyMatch = text.match(keyRegex);
-    if (keyMatch && keyMatch[1]) {
-      const keyCount = parseInt(keyMatch[1], 10);
-      bot.keys = (bot.keys || 0) + keyCount;
-      console.log(`[KEYS] ${bot.username} +${keyCount} keys (total: ${bot.keys})`);
-      return;
-    }
+    // ... your existing shard/key parser ...
   });
 
   bot.once('spawn', () => {
     logger.success(`Bot ${bot.username} spawned`);
-    const cfg = getConfig();
 
+    // You can still use cfg here safely now
     if (cfg.plugins && cfg.plugins.antiAfk) antiAfk(bot);
     if (cfg.plugins && cfg.plugins.randomMove) randomMove(bot);
     if (cfg.plugins && cfg.plugins.chatLogger) chatLogger(bot);
@@ -185,7 +143,6 @@ function createBot(accountConfig) {
   });
 
   bot.on('death', () => {
-    const cfg = getConfig();
     if (cfg.plugins && cfg.plugins.autoRespawn) {
       logger.info(`Bot ${bot.username} died, respawning…`);
       setTimeout(() => bot.respawn(), 1500);
@@ -193,7 +150,7 @@ function createBot(accountConfig) {
   });
 
   bot.on('chat', (username, message) => {
-    if (getConfig().web && getConfig().web.enabled) {
+    if (cfg.web && cfg.web.enabled) {
       io.emit('chat', {
         username: accountConfig.username,
         botUsername: bot.username,
@@ -203,7 +160,8 @@ function createBot(accountConfig) {
     }
   });
 
-  if (getConfig().plugins && getConfig().plugins.autoReconnect) {
+  // FIXED LINE HERE
+  if (cfg.plugins && cfg.plugins.autoReconnect) {
     autoReconnect(bot, () => {
       logger.info(`Recreating bot for ${accountConfig.username}…`);
       createBot(accountConfig);
@@ -228,6 +186,44 @@ function createBot(accountConfig) {
 }
 
 /**
+ * Start viewer for a bot
+ */
+function startViewerForBot(bot) {
+  if (bot.viewerRunning) return;
+  bot.waitForChunksToLoad(() => {
+    try {
+      const viewer = mineflayerViewer(bot, {
+        port: bot.viewerPort,
+        firstPerson: false,
+        viewDistance: 6
+      });
+      bot.viewerInstance = viewer;
+      bot.viewerRunning = true;
+      logger.success(`[VIEWER] Started for ${bot.username} on http://localhost:${bot.viewerPort}`);
+      broadcastBotsStatus();
+    } catch (err) {
+      logger.error(`[VIEWER] Failed to start for ${bot.username}: ${err.message}`);
+    }
+  });
+}
+
+/**
+ * Stop viewer for a bot
+ */
+function stopViewerForBot(bot) {
+  if (!bot.viewerRunning || !bot.viewerInstance) return;
+  try {
+    bot.viewerInstance.close();
+    bot.viewerInstance = null;
+    bot.viewerRunning = false;
+    logger.success(`[VIEWER] Stopped for ${bot.username}`);
+    broadcastBotsStatus();
+  } catch (err) {
+    logger.error(`[VIEWER] Failed to stop for ${bot.username}: ${err.message}`);
+  }
+}
+
+/**
  * Launch bots with staggered random delays.
  */
 function startBots() {
@@ -240,24 +236,19 @@ function startBots() {
       return;
     }
   }
-
   console.log('🚀 Starting bots with staggered random delays...');
-
   const delayRanges = [
-    { min: 5,  max: 20 },
+    { min: 5, max: 20 },
     { min: 15, max: 40 },
     { min: 25, max: 60 },
     { min: 40, max: 90 },
     { min: 60, max: 120 }
   ];
-
   accounts.forEach((acc, index) => {
     const range = delayRanges[index] || { min: 10, max: 60 };
     const randomSec = Math.floor(Math.random() * (range.max - range.min + 1)) + range.min;
     const delayMs = randomSec * 1000;
-
     console.log(`[DELAY] ${acc.username} scheduled in ~${randomSec}s (range ${range.min}–${range.max}s)`);
-
     setTimeout(() => {
       console.log(`[DELAY] Launching ${acc.username} now`);
       createBot(acc);
@@ -268,7 +259,6 @@ function startBots() {
 // Socket.io connection handling
 io.on('connection', socket => {
   broadcastBotsStatus();
-
   socket.on('sendMessage', data => {
     const cfg = getConfig();
     if (!cfg.web || !cfg.web.allowWebChat) return;
@@ -278,6 +268,21 @@ io.on('connection', socket => {
     if (!targetBot || !targetBot.player) return;
     if (data.message.length > 100) return;
     targetBot.chat(data.message.trim());
+  });
+  // Viewer controls
+  socket.on('startViewer', data => {
+    const targetName = data.username;
+    const targetBot = bots[targetName];
+    if (targetBot && targetBot.entity) { // Only if online
+      startViewerForBot(targetBot);
+    }
+  });
+  socket.on('stopViewer', data => {
+    const targetName = data.username;
+    const targetBot = bots[targetName];
+    if (targetBot) {
+      stopViewerForBot(targetBot);
+    }
   });
 });
 
