@@ -179,66 +179,63 @@ function createBot(accountConfig) {
     }
   });
 
-  bot.once('spawn', () => {
-    logger.success(`Bot ${bot.username} spawned`);
-	setTimeout(() => {
-    const sidebar = bot.scoreboard.sidebar; // or bot.scoreboard['sidebar']
-    if (sidebar) {
-      console.log('Sidebar title:', sidebar.title);
+bot.once('spawn', () => {
+  logger.success(`Bot ${bot.username} spawned`);
 
-      const lines = Object.values(sidebar.itemsMap)
-        .sort((a, b) => b.value - a.value)   // highest score first
-        .map(item => item.name);             // the displayed text
-
-      console.log('Sidebar lines:', lines);
-
-    if (cfg.plugins && cfg.plugins.antiAfk) antiAfk(bot);
-    if (cfg.plugins && cfg.plugins.randomMove) randomMove(bot);
-    if (cfg.plugins && cfg.plugins.chatLogger) chatLogger(bot);
-    if (cfg.plugins && cfg.plugins.autoLobby) {
-      setTimeout(() => autoLobby(bot), 2000);
-    } else if (cfg.plugins && cfg.plugins.autoSpawnCommand) {
-      setTimeout(() => {
-        bot.chat('/warp afk');
-        //setTimeout(() => bot.chat('/lobby'), 3000);
-      }, 5000);
-    }
-
-    broadcastBotsStatus();
-
+  // Load plugins immediately (not inside a timeout)
+  if (cfg.plugins && cfg.plugins.antiAfk) antiAfk(bot);
+  if (cfg.plugins && cfg.plugins.randomMove) randomMove(bot);
+  if (cfg.plugins && cfg.plugins.chatLogger) chatLogger(bot);
+  if (cfg.plugins && cfg.plugins.autoLobby) {
+    setTimeout(() => autoLobby(bot), 2000);
+  } else if (cfg.plugins && cfg.plugins.autoSpawnCommand) {
     setTimeout(() => {
-      if (bot.entity) {
-        //bot.chat('/shards');  //Removed 
-        logger.info(`[SHARDS] Login query sent for ${bot.username || accountConfig.username}`);
-      }
-    }, 8000);
-  });
-  
-  setTimeout(() => {
-    const sidebar = bot.scoreboard.sidebar;  // or bot.scoreboard['sidebar']
+      bot.chat('/warp afk');
+      // setTimeout(() => bot.chat('/lobby'), 3000); // commented out
+    }, 5000);
+  }
 
+  broadcastBotsStatus();
+
+  // Send /shards after 8 seconds (login delay)
+  setTimeout(() => {
+    if (bot.entity) {
+      // bot.chat('/shards'); // ← still commented out
+      logger.info(`[SHARDS] Login query sent for ${bot.username || accountConfig.username}`);
+    }
+  }, 8000);
+
+  // Read sidebar after 5 seconds (give server time to send it)
+  setTimeout(() => {
+    const sidebar = bot.scoreboard.sidebar;
     if (sidebar) {
       console.log('Sidebar title:', sidebar.title);
 
-      // The actual lines (ordered by score descending)
       const lines = Object.values(sidebar.itemsMap)
-        .sort((a, b) => b.value - a.value)   // highest score first
-        .map(item => item.name);             // the text shown
+        .sort((a, b) => b.value - a.value)
+        .map(item => item.name);
 
       console.log('Sidebar lines:', lines);
 
-      // Example output might be:
-      // [
-      //   "§b$ Money 44.85M",
-      //   "§d★ Shards 1.55k",
-      //   "✗ Kills 5",
-      //   ...
-      // ]
+      // Optional: Parse shards from sidebar as fallback
+      lines.forEach(line => {
+        const clean = line.replace(/§./g, ''); // remove color codes
+        if (clean.includes('Shards')) {
+          const match = clean.match(/Shards\s*([\d.]+[KMB]?)/i);
+          if (match) {
+            let val = parseFloat(match[1]);
+            if (match[1].toUpperCase().endsWith('K')) val *= 1000;
+            if (match[1].toUpperCase().endsWith('M')) val *= 1_000_000;
+            bot.shards = Math.round(val);
+            console.log(`Parsed shards from sidebar: ${bot.shards}`);
+          }
+        }
+      });
     } else {
       console.log('No sidebar scoreboard found yet');
     }
-  }, 3000); // wait 3 seconds after spawn
- });
+  }, 5000); // ← 5 seconds is usually enough
+});
 
   bot.on('death', () => {
     if (cfg.plugins && cfg.plugins.autoRespawn) {
