@@ -15,11 +15,6 @@ let updateInterval = null;
 let statusChannelId = null;
 let fetchWarningShown = false;
 
-/**
- * Start the Discord bot. Pass a function that returns the current
- * dictionary of bots.
- * @param {Function} getBots A function returning an object of bots
- */
 module.exports = function startDiscordBot(getBots) {
   const cfg = getConfig();
   if (!cfg.discord || !cfg.discord.enabled) {
@@ -30,7 +25,6 @@ module.exports = function startDiscordBot(getBots) {
   const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
   client.once('ready', async () => {
-	  
     console.log(`[DISCORD] Bot connected as ${client.user.tag}`);
     try {
       const rest = new REST({ version: '10' }).setToken(cfg.discord.token);
@@ -45,11 +39,23 @@ module.exports = function startDiscordBot(getBots) {
             {
               name: 'shards',
               description: 'Show current shard count for each bot'
+            },
+            {
+              name: 'kick',
+              description: 'Force disconnect one or all bots',
+              options: [
+                {
+                  name: 'bot',
+                  description: 'Bot name or "all"',
+                  type: 3, // String
+                  required: true
+                }
+              ]
             }
           ]
         }
       );
-      console.log('[DISCORD] Slash commands registered (/send-embed, /shards)');
+      console.log('[DISCORD] Slash commands registered');
     } catch (err) {
       console.error('[DISCORD] Failed to register slash commands:', err);
     }
@@ -84,14 +90,14 @@ module.exports = function startDiscordBot(getBots) {
             channel = await client.channels.fetch(statusChannelId);
           } catch (fetchErr) {
             if (!fetchWarningShown) {
-              console.warn('[DISCORD] Failed to fetch channel (may be deleted/permissions issue):', fetchErr.message);
+              console.warn('[DISCORD] Failed to fetch channel:', fetchErr.message);
               fetchWarningShown = true;
             }
             return;
           }
 
           if (!channel || channel.type !== ChannelType.GuildText) {
-            console.warn('[DISCORD] Channel no longer accessible or wrong type');
+            console.warn('[DISCORD] Channel no longer accessible');
             return;
           }
 
@@ -101,21 +107,15 @@ module.exports = function startDiscordBot(getBots) {
 
           try {
             if (!statusMessage) {
-              console.log('[DISCORD] Sending new status embed...');
               statusMessage = await channel.send({ embeds: [embed] });
-              console.log('[DISCORD] New status embed sent - ID:', statusMessage.id);
             } else {
-              //console.log('[DISCORD] Editing existing embed - ID:', statusMessage.id);
               await statusMessage.edit({ embeds: [embed] });
             }
           } catch (err) {
             console.error('[DISCORD] Failed to send/edit embed:', err.message);
-            console.error('[DISCORD] Error stack:', err.stack);
 
             try {
-              console.log('[DISCORD] Fallback: attempting new send...');
               statusMessage = await channel.send({ embeds: [embed] });
-              console.log('[DISCORD] Fallback success - new embed ID:', statusMessage.id);
             } catch (fallbackErr) {
               console.error('[DISCORD] Fallback send failed:', fallbackErr.message);
             }
@@ -145,21 +145,18 @@ module.exports = function startDiscordBot(getBots) {
 
         const bots = getBots();
 
-        // Force fresh shard query on all online bots when command is run
         Object.values(bots).forEach(bot => {
           if (bot?.entity) {
             bot.chat('/shards');
-            console.log(`[SHARDS] Command-triggered query for ${bot.username || 'unknown'}`);
           }
         });
 
-        // Wait ~8 seconds for server responses to arrive
         await new Promise(resolve => setTimeout(resolve, 8000));
 
         const embed = new EmbedBuilder()
           .setTitle('Bot Shard Balances')
           .setColor(0x9932cc)
-          .setDescription('Latest shard counts (fresh query just sent).')
+          .setDescription('Latest shard counts (fresh query sent).')
           .setTimestamp();
 
         let totalShards = 0;
@@ -189,7 +186,7 @@ module.exports = function startDiscordBot(getBots) {
             inline: false
           });
         } else {
-          embed.setDescription(embed.description + '\n\nNo responses yet — try again in 10–15s if needed.');
+          embed.setDescription(embed.description + '\n\nNo responses yet — try again in 10–15s.');
         }
 
         await interaction.editReply({ embeds: [embed] });
@@ -197,6 +194,36 @@ module.exports = function startDiscordBot(getBots) {
       } catch (err) {
         console.error('[DISCORD] /shards command error:', err);
         await interaction.editReply({ content: 'Error fetching shard data.' });
+      }
+    }
+
+    if (interaction.commandName === 'kick') {
+      try {
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+        const target = interaction.options.getString('bot');
+        const bots = getBots();
+        let result = '';
+
+        Object.entries(bots).forEach(([name, bot]) => {
+          if (target === 'all' || name === target) {
+            if (bot?.entity) {
+              try {
+                bot.quit('Kicked via /kick command');
+                result += `${name}: Disconnected\n`;
+              } catch (quitErr) {
+                result += `${name}: Disconnect failed - ${quitErr.message}\n`;
+              }
+            } else {
+              result += `${name}: Already offline\n`;
+            }
+          }
+        });
+
+        await interaction.editReply({ content: result || 'No bots kicked' });
+      } catch (err) {
+        console.error('[DISCORD] /kick error:', err);
+        await interaction.editReply({ content: 'Error during kick command.' });
       }
     }
   });
@@ -223,7 +250,6 @@ function buildEmbed(bots, cfg) {
     const accountName = accountKey;
     const mcUsername = bot?.username || 'Unknown (not logged in)';
 
-    // Declare extraStatus EARLY so it's available for shards line
     const extraStatus = getBotStatus(bot) || {};
 
     const statusLines = [];
@@ -252,7 +278,6 @@ function buildEmbed(bots, cfg) {
       statusLines.push(`**Position:** x:${Math.floor(pos.x)} y:${Math.floor(pos.y)} z:${Math.floor(pos.z)}`);
     }
 
-    // Use the value from getBotStatus (which now includes shards: bot.shards ?? null)
     const shardsDisplay = extraStatus.shards !== null && extraStatus.shards !== undefined
       ? `${extraStatus.shards.toLocaleString()} shards`
       : 'Unknown';
@@ -271,7 +296,6 @@ function buildEmbed(bots, cfg) {
       totalShards += extraStatus.shards;
     }
 
-    // Scoreboard section
     if (extraStatus.scoreboard && Array.isArray(extraStatus.scoreboard.lines) && extraStatus.scoreboard.lines.length > 0) {
       const maxLines = cfg.discord?.scoreboardMaxLines || 10;
       const sbLines = extraStatus.scoreboard.lines.slice(0, maxLines);
