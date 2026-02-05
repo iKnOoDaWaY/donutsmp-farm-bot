@@ -134,6 +134,10 @@
       cursor: pointer;
     }
     button:hover { background: #2ea043; }
+    .countdown-low {
+      color: #ff4444;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
@@ -162,7 +166,7 @@
     console.log('Connected to socket.io');
   });
 
-  // Live bot stats + controls
+  // Live bot stats update
   socket.on('bots', (botsData) => {
     const grid = document.getElementById('bot-grid');
     grid.innerHTML = '';
@@ -170,6 +174,14 @@
     Object.entries(botsData).forEach(([configName, bot]) => {
       const card = document.createElement('div');
       card.className = 'bot-card';
+
+      // Countdown display with low-time warning
+      let countdownText = bot.nextShardCountdown !== null 
+        ? bot.nextShardCountdown + 's' 
+        : 'Offline';
+      let countdownClass = (bot.nextShardCountdown !== null && bot.nextShardCountdown <= 10) 
+        ? 'countdown-low' 
+        : '';
 
       card.innerHTML = `
         <div class="bot-header">
@@ -179,13 +191,15 @@
         <div class="stat-line"><span class="label">Config:</span> ${configName}</div>
         <div class="stat-line"><span class="label">Status:</span> ${bot.online ? '🟢 Online' : '🔴 Offline'}</div>
         <div class="stat-line"><span class="label">Shards:</span> ${bot.shards}</div>
-		<p id="countdown-${configName}" class="stat-line"><span class="label">Next Shard:</span> <span id="countdown-value-${configName}">Offline</span></p>
         <div class="stat-line"><span class="label">Uptime:</span> ${formatUptime(bot.uptime)}</div>
         <div class="stat-line"><span class="label">Health:</span> ${bot.health}</div>
         <div class="stat-line"><span class="label">Food:</span> ${bot.food}</div>
         <div class="stat-line"><span class="label">Dimension:</span> ${bot.dimension}</div>
         <div class="stat-line"><span class="label">Position:</span> ${bot.position}</div>
         <div class="stat-line"><span class="label">Proxy:</span> ${bot.proxy}</div>
+        <div class="stat-line ${countdownClass}">
+          <span class="label">Next Shard:</span> ${countdownText}
+        </div>
 
         <div class="control-buttons">
           <button class="control-btn disconnect" onclick="controlBot('${configName}', 'disconnect')">Disconnect</button>
@@ -201,23 +215,29 @@
       grid.appendChild(card);
     });
   });
-  
-  // Auto-decrement countdowns every second
-setInterval(() => {
-  const countdownElements = document.querySelectorAll('[id^="countdown-"]');
-  countdownElements.forEach(el => {
-    let text = el.textContent.trim();
-    if (text.endsWith('s') && !isNaN(parseInt(text))) {
-      let seconds = parseInt(text);
-      if (seconds > 0) {
-        seconds--;
-        el.textContent = seconds + 's';
-      } else {
-        el.textContent = 'Soon';
+
+  // Auto-decrement countdowns every second (only if client has a value)
+  setInterval(() => {
+    const countdownElements = document.querySelectorAll('[id^="countdown-"]');
+    countdownElements.forEach(el => {
+      let text = el.textContent.trim();
+      if (text.endsWith('s') && !isNaN(parseInt(text))) {
+        let seconds = parseInt(text);
+        if (seconds > 0) {
+          seconds--;
+          el.textContent = seconds + 's';
+          if (seconds <= 10) {
+            el.classList.add('countdown-low');
+          } else {
+            el.classList.remove('countdown-low');
+          }
+        } else {
+          el.textContent = 'Soon';
+          el.classList.add('countdown-low');
+        }
       }
-    }
-  });
- }, 1000);
+    });
+  }, 1000);
 
   // Global chat display
   socket.on('chat', (data) => {
@@ -240,7 +260,6 @@ setInterval(() => {
     const input = document.getElementById('global-chat-input');
     const message = input.value.trim();
     if (!message) return;
-
     socket.emit('sendMessage', { message });
     input.value = '';
   });
@@ -255,7 +274,6 @@ setInterval(() => {
     const input = document.getElementById(`chat-${botName}`);
     const message = input.value.trim();
     if (!message) return;
-
     socket.emit('sendMessage', { message, username: botName });
     input.value = '';
   }
@@ -268,6 +286,5 @@ setInterval(() => {
     return `${h > 0 ? h + 'h ' : ''}${m}m ${s}s`;
   }
 </script>
-
 </body>
 </html>

@@ -3,6 +3,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const { SocksProxyAgent } = require('socks-proxy-agent');
+// const { viewer } = require('prismarine-viewer'); // Uncomment when canvas is installed
 
 const serverConfig = require('./config/bot.config');
 const logger = require('./utils/logger');
@@ -59,7 +60,8 @@ function broadcastBotsStatus() {
       food: bot?.food ?? 'N/A',
       dimension: bot?.game?.dimension ?? 'N/A',
       position: bot?.entity?.position ? `${Math.floor(bot.entity.position.x)}, ${Math.floor(bot.entity.position.y)}, ${Math.floor(bot.entity.position.z)}` : 'N/A',
-      proxy: bot?.options?.agent ? 'Yes' : 'No'
+      proxy: bot?.options?.agent ? 'Yes' : 'No',
+      viewerPort: bot?.viewerPort || null // For "View" button
     };
   }
 
@@ -79,7 +81,7 @@ function createBot(accountConfig) {
     version: cfgBot.version,
     username: accountConfig.username,
     auth: accountConfig.auth,
-    skipValidation: true, // Helps with PartialReadError
+    skipValidation: true // Helps with PartialReadError on 1.20.5+
   };
 
   if (accountConfig.proxy) {
@@ -99,11 +101,26 @@ function createBot(accountConfig) {
   }
 
   const bot = mineflayer.createBot(botOptions);
-  bot.sessionStart = Date.now(); // For uptime
+  bot.sessionStart = Date.now(); // For uptime calculation
   bots[accountConfig.username] = bot;
 
   bot.shards = null;
   bot.keys = null;
+
+  // Start prismarine-viewer for this bot (optional - requires canvas installed)
+  const viewerPort = 3001 + Object.keys(bots).length; // Unique port: 3001, 3002, ...
+  bot.viewerPort = viewerPort;
+
+  // try {
+  //   viewer(bot, {
+  //     port: viewerPort,
+  //     firstPerson: true, // or false for third-person
+  //     viewDistance: 6
+  //   });
+  //   logger.info(`[VIEWER] Started prismarine-viewer for ${accountConfig.username} on http://localhost:${viewerPort}`);
+  // } catch (viewerErr) {
+  //   logger.warn(`[VIEWER] Failed to start viewer for ${accountConfig.username}: ${viewerErr.message} (canvas module missing?)`);
+  // }
 
   // Chat parser for shards AND keys
   bot.on('message', (jsonMsg) => {
@@ -226,7 +243,7 @@ function startBots() {
   console.log('🚀 Starting bots with staggered random delays...');
 
   const delayRanges = [
-    { min: 5, max: 20 },
+    { min: 5,  max: 20 },
     { min: 15, max: 40 },
     { min: 25, max: 60 },
     { min: 40, max: 90 },
