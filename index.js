@@ -4,6 +4,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const { SocksProxyAgent } = require('socks-proxy-agent');
 const { mineflayer: mineflayerViewer } = require('prismarine-viewer');
+const { GoalBlock } = require('mineflayer-pathfinder').goals;
 
 const serverConfig = require('./config/bot.config');
 const logger = require('./utils/logger');
@@ -209,7 +210,7 @@ bot.once('spawn', () => {
   setTimeout(() => {
     const sidebar = bot.scoreboard.sidebar;
     if (sidebar) {
-      console.log('Sidebar title:', sidebar.title);
+      console.log('Donut SMP', sidebar.title);
 
       const lines = Object.values(sidebar.itemsMap)
         .sort((a, b) => b.value - a.value)
