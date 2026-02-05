@@ -161,27 +161,20 @@
 
 <script>
   const socket = io();
-
   socket.on('connect', () => {
     console.log('Connected to socket.io');
   });
 
-  // Live bot stats update - this creates/updates all bot cards
+  // Live bot stats update
   socket.on('bots', (botsData) => {
     const grid = document.getElementById('bot-grid');
     grid.innerHTML = '';
-
     Object.entries(botsData).forEach(([configName, bot]) => {
       const card = document.createElement('div');
       card.className = 'bot-card';
-
       // Countdown display with low-time warning
-      let countdownText = bot.nextShardCountdown !== null
-        ? bot.nextShardCountdown + 's'
-        : 'Offline';
-      let countdownClass = (bot.nextShardCountdown !== null && bot.nextShardCountdown <= 10)
-        ? 'countdown-low'
-        : '';
+      let countdownText = bot.nextShardCountdown !== null ? bot.nextShardCountdown + 's' : 'Offline';
+      let countdownClass = (bot.nextShardCountdown !== null && bot.nextShardCountdown <= 10) ? 'countdown-low' : '';
 
       card.innerHTML = `
         <div class="bot-header">
@@ -201,27 +194,22 @@
           <span class="label">Next Shard:</span> ${countdownText}
         </div>
 
-        <!-- Viewer controls - only show if bot is online -->
-        ${bot.online ? `
-          <div class="control-buttons" style="margin-top: 12px;">
-            <button class="control-btn" 
-                    style="background: ${bot.viewerRunning ? '#e74c3c' : '#2ecc71'}; color: white;"
-                    onclick="${bot.viewerRunning ? `stopViewer('${configName}')` : `startViewer('${configName}')`}">
-              ${bot.viewerRunning ? 'Stop Viewer' : 'Start Viewer'}
-            </button>
-            <button class="control-btn" 
-                    style="background: ${bot.viewerRunning ? '#3498db' : '#95a5a6'}; color: white;"
-                    ${bot.viewerRunning && bot.viewerPort ? '' : 'disabled'}
-                    onclick="openViewer('${bot.viewerPort}')">
-              Open Viewer
-            </button>
-          </div>
-        ` : ''}
-
         <div class="control-buttons">
           <button class="control-btn disconnect" onclick="controlBot('${configName}', 'disconnect')">Disconnect</button>
           <button class="control-btn reconnect" onclick="controlBot('${configName}', 'reconnect')">Reconnect</button>
         </div>
+
+        <!-- Viewer controls -->
+        ${bot.online ? `
+          <div style="margin-top: 15px;">
+            <button class="control-btn" style="background: $$   {bot.viewerRunning ? '#d73a49' : '#238636'}; color: white;" onclick="   $${bot.viewerRunning ? `stopViewer('${configName}')` : `startViewer('${configName}')`}">
+              ${bot.viewerRunning ? 'Stop Viewer' : 'Start Viewer'}
+            </button>
+            <button class="control-btn" style="background: ${bot.viewerRunning ? '#1f6feb' : '#444d56'}; color: white;" $$   {bot.viewerRunning ? '' : 'disabled'} onclick="openViewer('   $${bot.viewerPort}')">
+              Open Viewer
+            </button>
+          </div>
+        ` : ''}
 
         <div class="chat-per-bot">
           <input type="text" class="chat-input-small" id="chat-${configName}" placeholder="Message to ${bot.minecraftUsername || configName}" />
@@ -233,11 +221,26 @@
     });
   });
 
-  // Auto-decrement countdowns every second
+  // Auto-decrement countdowns every second (only if client has a value)
   setInterval(() => {
-    const countdownElements = document.querySelectorAll('.countdown-low, .stat-line:not(.countdown-low)');
+    const countdownElements = document.querySelectorAll('[id^="countdown-"]');
     countdownElements.forEach(el => {
-      // ... your existing countdown logic ...
+      let text = el.textContent.trim();
+      if (text.endsWith('s') && !isNaN(parseInt(text))) {
+        let seconds = parseInt(text);
+        if (seconds > 0) {
+          seconds--;
+          el.textContent = seconds + 's';
+          if (seconds <= 10) {
+            el.classList.add('countdown-low');
+          } else {
+            el.classList.remove('countdown-low');
+          }
+        } else {
+          el.textContent = 'Soon';
+          el.classList.add('countdown-low');
+        }
+      }
     });
   }, 1000);
 
@@ -280,7 +283,15 @@
     input.value = '';
   }
 
-  // NEW: Viewer control functions
+  function formatUptime(seconds) {
+    if (!seconds) return 'Offline';
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    return `${h > 0 ? h + 'h ' : ''}${m}m ${s}s`;
+  }
+
+  // Viewer control functions
   function startViewer(botName) {
     socket.emit('startViewer', { username: botName });
   }
@@ -293,14 +304,6 @@
     if (port) {
       window.open(`http://localhost:${port}`, '_blank');
     }
-  }
-
-  function formatUptime(seconds) {
-    if (!seconds) return 'Offline';
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-    return `${h > 0 ? h + 'h ' : ''}${m}m ${s}s`;
   }
 </script>
 </body>
