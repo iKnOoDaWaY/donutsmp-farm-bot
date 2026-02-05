@@ -76,6 +76,11 @@
       border-radius: 6px;
       cursor: pointer;
       font-size: 0.9em;
+      transition: opacity 0.2s;
+    }
+    .control-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
     }
     .disconnect { background: #d73a49; color: white; }
     .reconnect { background: #238636; color: white; }
@@ -141,13 +146,10 @@
   </style>
 </head>
 <body>
-
 <h1>DonutSMP Farm Bots - Live Dashboard</h1>
-
 <div id="container">
   <!-- Bot stats grid with controls -->
   <div id="bot-grid"></div>
-
   <!-- Global chat section -->
   <div id="chat-section">
     <h2>Global Chat (all bots)</h2>
@@ -166,6 +168,7 @@
     console.log('Connected to socket.io');
   });
 
+  // Live bot stats update
   socket.on('bots', (botsData) => {
     const grid = document.getElementById('bot-grid');
     grid.innerHTML = '';
@@ -195,15 +198,15 @@
           <span class="label">Next Shard:</span> ${countdownText}
         </div>
 
-        <!-- Viewer controls - only if online -->
+        <!-- Viewer controls - only show if bot is online -->
         ${bot.online ? `
-          <div class="control-buttons" style="margin-top: 15px; gap: 10px;">
-            <button class="control-btn" 
+          <div class="control-buttons" style="margin-top: 15px;">
+            <button class="control-btn"
                     style="background: ${bot.viewerRunning ? '#d73a49' : '#238636'}; color: white;"
                     onclick="${bot.viewerRunning ? `stopViewer('${configName}')` : `startViewer('${configName}')`}">
               ${bot.viewerRunning ? 'Stop Viewer' : 'Start Viewer'}
             </button>
-            <button class="control-btn" 
+            <button class="control-btn"
                     style="background: ${bot.viewerRunning ? '#1f6feb' : '#444d56'}; color: white;"
                     ${bot.viewerRunning && bot.viewerPort ? '' : 'disabled'}
                     onclick="openViewer('${bot.viewerPort}')">
@@ -227,9 +230,9 @@
     });
   });
 
-  // Auto-decrement countdowns every second (only if client has a value)
+  // Auto-decrement countdowns every second
   setInterval(() => {
-    const countdownElements = document.querySelectorAll('[id^="countdown-"]');
+    const countdownElements = document.querySelectorAll('.countdown-low, .stat-line:not(.countdown-low)');
     countdownElements.forEach(el => {
       let text = el.textContent.trim();
       if (text.endsWith('s') && !isNaN(parseInt(text))) {
@@ -297,7 +300,7 @@
     return `${h > 0 ? h + 'h ' : ''}${m}m ${s}s`;
   }
 
-  // Viewer control functions
+  // Viewer control functions (called from card buttons)
   function startViewer(botName) {
     socket.emit('startViewer', { username: botName });
   }
@@ -308,10 +311,11 @@
 
   function openViewer(port) {
     if (port) {
-      window.open(`http://localhost:${port}`, '_blank');
+      window.open(`http://localhost:${port}`, '_blank', 'width=900,height=700');
+    } else {
+      alert('Viewer port not available');
     }
   }
 </script>
 </body>
 </html>
-
