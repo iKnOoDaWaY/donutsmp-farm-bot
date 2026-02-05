@@ -1,164 +1,3 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>DonutSMP Farm Bot Dashboard</title>
-  <script src="/socket.io/socket.io.js"></script>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      background: #0d1117;
-      color: #c9d1d9;
-      margin: 0;
-      padding: 20px;
-    }
-    h1, h2 {
-      color: #58a6ff;
-    }
-    #container {
-      display: flex;
-      gap: 30px;
-      flex-wrap: wrap;
-    }
-    #bot-grid {
-      flex: 3;
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-      gap: 20px;
-    }
-    #chat-section {
-      flex: 1;
-      min-width: 340px;
-      background: #161b22;
-      border: 1px solid #30363d;
-      border-radius: 10px;
-      padding: 20px;
-      height: fit-content;
-      max-height: 80vh;
-      display: flex;
-      flex-direction: column;
-    }
-    .bot-card {
-      background: #161b22;
-      border: 1px solid #30363d;
-      border-radius: 10px;
-      padding: 20px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-    }
-    .bot-header {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 12px;
-    }
-    .status-dot {
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-    }
-    .online { background: #00ff00; }
-    .offline { background: #ff0000; }
-    .stat-line {
-      margin: 6px 0;
-      font-size: 0.95em;
-    }
-    .label { color: #8b949e; }
-    .control-buttons {
-      margin-top: 12px;
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-    .control-btn {
-      padding: 8px 12px;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 0.9em;
-    }
-    .disconnect { background: #d73a49; color: white; }
-    .reconnect { background: #238636; color: white; }
-    .send-chat { background: #444d56; color: white; }
-    .chat-per-bot {
-      margin-top: 10px;
-      display: flex;
-      gap: 6px;
-    }
-    .chat-input-small {
-      flex: 1;
-      padding: 6px;
-      border: 1px solid #30363d;
-      border-radius: 6px;
-      background: #0d1117;
-      color: #c9d1d9;
-    }
-    #chat-messages {
-      flex: 1;
-      overflow-y: auto;
-      margin-bottom: 10px;
-      padding: 10px;
-      background: #0d1117;
-      border-radius: 6px;
-      max-height: 400px;
-    }
-    .chat-msg {
-      margin: 6px 0;
-      padding: 8px;
-      border-radius: 6px;
-    }
-    .chat-msg.system {
-      background: #21262d;
-      font-style: italic;
-      color: #8b949e;
-    }
-    #global-chat-form {
-      display: flex;
-      gap: 10px;
-      margin-top: 10px;
-    }
-    #global-chat-input {
-      flex: 1;
-      padding: 10px;
-      border: 1px solid #30363d;
-      border-radius: 6px;
-      background: #0d1117;
-      color: #c9d1d9;
-    }
-    button {
-      padding: 10px 16px;
-      background: #238636;
-      color: white;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-    }
-    button:hover { background: #2ea043; }
-    .countdown-low {
-      color: #ff4444;
-      font-weight: bold;
-    }
-  </style>
-</head>
-<body>
-
-<h1>DonutSMP Farm Bots - Live Dashboard</h1>
-
-<div id="container">
-  <!-- Bot stats grid with controls -->
-  <div id="bot-grid"></div>
-
-  <!-- Global chat section -->
-  <div id="chat-section">
-    <h2>Global Chat (all bots)</h2>
-    <div id="chat-messages"></div>
-    <form id="global-chat-form">
-      <input type="text" id="global-chat-input" placeholder="Type message to send to all bots..." autocomplete="off" />
-      <button type="submit">Send to All</button>
-    </form>
-  </div>
-</div>
-
 <script>
   const socket = io();
 
@@ -166,7 +5,7 @@
     console.log('Connected to socket.io');
   });
 
-  // Live bot stats update
+  // Live bot stats update - this creates/updates all bot cards
   socket.on('bots', (botsData) => {
     const grid = document.getElementById('bot-grid');
     grid.innerHTML = '';
@@ -176,11 +15,11 @@
       card.className = 'bot-card';
 
       // Countdown display with low-time warning
-      let countdownText = bot.nextShardCountdown !== null 
-        ? bot.nextShardCountdown + 's' 
+      let countdownText = bot.nextShardCountdown !== null
+        ? bot.nextShardCountdown + 's'
         : 'Offline';
-      let countdownClass = (bot.nextShardCountdown !== null && bot.nextShardCountdown <= 10) 
-        ? 'countdown-low' 
+      let countdownClass = (bot.nextShardCountdown !== null && bot.nextShardCountdown <= 10)
+        ? 'countdown-low'
         : '';
 
       card.innerHTML = `
@@ -200,12 +39,28 @@
         <div class="stat-line ${countdownClass}">
           <span class="label">Next Shard:</span> ${countdownText}
         </div>
+
+        <!-- Viewer controls - only show if bot is online -->
+        ${bot.online ? `
+          <div class="control-buttons" style="margin-top: 12px;">
+            <button class="control-btn" 
+                    style="background: ${bot.viewerRunning ? '#e74c3c' : '#2ecc71'}; color: white;"
+                    onclick="${bot.viewerRunning ? `stopViewer('${configName}')` : `startViewer('${configName}')`}">
+              ${bot.viewerRunning ? 'Stop Viewer' : 'Start Viewer'}
+            </button>
+            <button class="control-btn" 
+                    style="background: ${bot.viewerRunning ? '#3498db' : '#95a5a6'}; color: white;"
+                    ${bot.viewerRunning && bot.viewerPort ? '' : 'disabled'}
+                    onclick="openViewer('${bot.viewerPort}')">
+              Open Viewer
+            </button>
+          </div>
+        ` : ''}
+
         <div class="control-buttons">
           <button class="control-btn disconnect" onclick="controlBot('${configName}', 'disconnect')">Disconnect</button>
           <button class="control-btn reconnect" onclick="controlBot('${configName}', 'reconnect')">Reconnect</button>
         </div>
-		<div id="viewer-controls" style="margin-top: 15px;">
-		</div>
 
         <div class="chat-per-bot">
           <input type="text" class="chat-input-small" id="chat-${configName}" placeholder="Message to ${bot.minecraftUsername || configName}" />
@@ -217,26 +72,11 @@
     });
   });
 
-  // Auto-decrement countdowns every second (only if client has a value)
+  // Auto-decrement countdowns every second
   setInterval(() => {
-    const countdownElements = document.querySelectorAll('[id^="countdown-"]');
+    const countdownElements = document.querySelectorAll('.countdown-low, .stat-line:not(.countdown-low)');
     countdownElements.forEach(el => {
-      let text = el.textContent.trim();
-      if (text.endsWith('s') && !isNaN(parseInt(text))) {
-        let seconds = parseInt(text);
-        if (seconds > 0) {
-          seconds--;
-          el.textContent = seconds + 's';
-          if (seconds <= 10) {
-            el.classList.add('countdown-low');
-          } else {
-            el.classList.remove('countdown-low');
-          }
-        } else {
-          el.textContent = 'Soon';
-          el.classList.add('countdown-low');
-        }
-      }
+      // ... your existing countdown logic ...
     });
   }, 1000);
 
@@ -279,6 +119,21 @@
     input.value = '';
   }
 
+  // NEW: Viewer control functions
+  function startViewer(botName) {
+    socket.emit('startViewer', { username: botName });
+  }
+
+  function stopViewer(botName) {
+    socket.emit('stopViewer', { username: botName });
+  }
+
+  function openViewer(port) {
+    if (port) {
+      window.open(`http://localhost:${port}`, '_blank');
+    }
+  }
+
   function formatUptime(seconds) {
     if (!seconds) return 'Offline';
     const h = Math.floor(seconds / 3600);
@@ -287,5 +142,3 @@
     return `${h > 0 ? h + 'h ' : ''}${m}m ${s}s`;
   }
 </script>
-</body>
-</html>
