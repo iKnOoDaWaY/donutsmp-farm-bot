@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-=======
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -161,7 +159,6 @@
   </div>
 </div>
 
->>>>>>> 878223e92694687c418b525c70cbb67103916f4d
 <script>
   const socket = io();
 
@@ -169,11 +166,7 @@
     console.log('Connected to socket.io');
   });
 
-<<<<<<< HEAD
   // Live bot stats update - this creates/updates all bot cards
-=======
-  // Live bot stats update
->>>>>>> 878223e92694687c418b525c70cbb67103916f4d
   socket.on('bots', (botsData) => {
     const grid = document.getElementById('bot-grid');
     grid.innerHTML = '';
@@ -183,19 +176,11 @@
       card.className = 'bot-card';
 
       // Countdown display with low-time warning
-<<<<<<< HEAD
       let countdownText = bot.nextShardCountdown !== null
         ? bot.nextShardCountdown + 's'
         : 'Offline';
       let countdownClass = (bot.nextShardCountdown !== null && bot.nextShardCountdown <= 10)
         ? 'countdown-low'
-=======
-      let countdownText = bot.nextShardCountdown !== null 
-        ? bot.nextShardCountdown + 's' 
-        : 'Offline';
-      let countdownClass = (bot.nextShardCountdown !== null && bot.nextShardCountdown <= 10) 
-        ? 'countdown-low' 
->>>>>>> 878223e92694687c418b525c70cbb67103916f4d
         : '';
 
       card.innerHTML = `
@@ -216,7 +201,6 @@
           <span class="label">Next Shard:</span> ${countdownText}
         </div>
 
-<<<<<<< HEAD
         <!-- Viewer controls - only show if bot is online -->
         ${bot.online ? `
           <div class="control-buttons" style="margin-top: 12px;">
@@ -234,8 +218,6 @@
           </div>
         ` : ''}
 
-=======
->>>>>>> 878223e92694687c418b525c70cbb67103916f4d
         <div class="control-buttons">
           <button class="control-btn disconnect" onclick="controlBot('${configName}', 'disconnect')">Disconnect</button>
           <button class="control-btn reconnect" onclick="controlBot('${configName}', 'reconnect')">Reconnect</button>
@@ -251,34 +233,11 @@
     });
   });
 
-<<<<<<< HEAD
   // Auto-decrement countdowns every second
   setInterval(() => {
     const countdownElements = document.querySelectorAll('.countdown-low, .stat-line:not(.countdown-low)');
     countdownElements.forEach(el => {
       // ... your existing countdown logic ...
-=======
-  // Auto-decrement countdowns every second (only if client has a value)
-  setInterval(() => {
-    const countdownElements = document.querySelectorAll('[id^="countdown-"]');
-    countdownElements.forEach(el => {
-      let text = el.textContent.trim();
-      if (text.endsWith('s') && !isNaN(parseInt(text))) {
-        let seconds = parseInt(text);
-        if (seconds > 0) {
-          seconds--;
-          el.textContent = seconds + 's';
-          if (seconds <= 10) {
-            el.classList.add('countdown-low');
-          } else {
-            el.classList.remove('countdown-low');
-          }
-        } else {
-          el.textContent = 'Soon';
-          el.classList.add('countdown-low');
-        }
-      }
->>>>>>> 878223e92694687c418b525c70cbb67103916f4d
     });
   }, 1000);
 
@@ -321,7 +280,6 @@
     input.value = '';
   }
 
-<<<<<<< HEAD
   // NEW: Viewer control functions
   function startViewer(botName) {
     socket.emit('startViewer', { username: botName });
@@ -337,8 +295,6 @@
     }
   }
 
-=======
->>>>>>> 878223e92694687c418b525c70cbb67103916f4d
   function formatUptime(seconds) {
     if (!seconds) return 'Offline';
     const h = Math.floor(seconds / 3600);
@@ -346,10 +302,7 @@
     const s = seconds % 60;
     return `${h > 0 ? h + 'h ' : ''}${m}m ${s}s`;
   }
-<<<<<<< HEAD
-</script>
-=======
 </script>
 </body>
 </html>
->>>>>>> 878223e92694687c418b525c70cbb67103916f4d
+
