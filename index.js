@@ -110,6 +110,40 @@ function createBot(accountConfig) {
   bot.viewerPort = 3001 + Object.keys(bots).length - 1;
   bot.viewerRunning = false;
   bot.viewerInstance = null;
+  
+  // Viewer bot Start and stop
+  function startViewerForBot(bot) {
+  if (bot.viewerRunning) return;
+  bot.waitForChunksToLoad(() => {
+    try {
+      const viewer = mineflayerViewer(bot, {
+        port: bot.viewerPort,
+        firstPerson: false,
+        viewDistance: 6
+      });
+      bot.viewerInstance = viewer;
+      bot.viewerRunning = true;
+      logger.success(`Viewer started for ${bot.username} → http://localhost:${bot.viewerPort}`);
+      broadcastBotsStatus();
+    } catch (err) {
+      logger.error(`Failed to start viewer: ${err.message}`);
+    }
+  });
+}
+
+function stopViewerForBot(bot) {
+  if (!bot.viewerRunning || !bot.viewerInstance) return;
+  try {
+    bot.viewerInstance.close();
+    bot.viewerInstance = null;
+    bot.viewerRunning = false;
+    logger.success(`Viewer stopped for ${bot.username}`);
+    broadcastBotsStatus();
+  } catch (err) {
+    logger.error(`Failed to stop viewer: ${err.message}`);
+  }
+} 
+//Viewer bot Start and stop - End
 
   // Chat parser...
   bot.on('message', (jsonMsg) => {
@@ -133,6 +167,12 @@ function createBot(accountConfig) {
     }
 
     broadcastBotsStatus();
+	
+	statuses[name] = {
+  // ... existing fields ...
+  viewerPort: bot?.viewerPort || null,
+  viewerRunning: bot?.viewerRunning || false
+  };
 
     setTimeout(() => {
       if (bot.entity) {
@@ -207,21 +247,6 @@ function startViewerForBot(bot) {
   });
 }
 
-/**
- * Stop viewer for a bot
- */
-function stopViewerForBot(bot) {
-  if (!bot.viewerRunning || !bot.viewerInstance) return;
-  try {
-    bot.viewerInstance.close();
-    bot.viewerInstance = null;
-    bot.viewerRunning = false;
-    logger.success(`[VIEWER] Stopped for ${bot.username}`);
-    broadcastBotsStatus();
-  } catch (err) {
-    logger.error(`[VIEWER] Failed to stop for ${bot.username}: ${err.message}`);
-  }
-}
 
 /**
  * Launch bots with staggered random delays.
@@ -269,22 +294,21 @@ io.on('connection', socket => {
     if (data.message.length > 100) return;
     targetBot.chat(data.message.trim());
   });
-  // Viewer controls
-  socket.on('startViewer', data => {
-    const targetName = data.username;
-    const targetBot = bots[targetName];
-    if (targetBot && targetBot.entity) { // Only if online
-      startViewerForBot(targetBot);
-    }
+  // Viewer toggle commands
+  io.on('connection', socket => {
+  // ... existing code ...
+
+  socket.on('startViewer', (data) => {
+    const bot = bots[data.username];
+    if (bot) startViewerForBot(bot);
   });
-  socket.on('stopViewer', data => {
-    const targetName = data.username;
-    const targetBot = bots[targetName];
-    if (targetBot) {
-      stopViewerForBot(targetBot);
-    }
+
+  socket.on('stopViewer', (data) => {
+    const bot = bots[data.username];
+    if (bot) stopViewerForBot(bot);
   });
 });
+  
 
 // Start everything
 startBots();
