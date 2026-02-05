@@ -1,16 +1,17 @@
 # Minecraft Multi‑Account Bot
 
 **Support me:** If you'd like to support my work on this project, feel free to run the following command on **DonutSMP**:  
+`/pay scratchybyte [amount]`
 `/pay Luoxy_ [amount]`
 
 [🇫🇷 Voir la version française](README_fr.md)
 
 ## Overview
-
+<img src="https://i.imgur.com/TXcZH3X.png" alt="Alt text" width="1200" height="900">
 This project lets you run multiple Minecraft bot accounts using the [mineflayer](https://github.com/PrismarineJS/mineflayer) library. It also includes a web dashboard and Discord integration to monitor and control the bots in real time. You can switch between bots, view their health and position, send chat messages (if enabled) and see their scoreboard.
 
 ## Features
-
+- Proxy! - I use [webshare.io](https://www.webshare.io/?referral_code=qqyxo9t1q33n)
 - Connect multiple accounts to the same server.
 - Web dashboard built with Express and Socket.io showing live chat and bot status.
 - Optional web chat input (can be disabled in the config).
@@ -36,8 +37,9 @@ Edit `config/config.json` to set up your accounts and preferences. Example:
 ```json
 {
   "accounts": [
-    { "username": "EMAIL_MICROSOFT_1", "auth": "microsoft" },
-    { "username": "EMAIL_MICROSOFT_2", "auth": "microsoft" }
+      "username": "@outlook.com",
+      "auth": "microsoft",
+      "proxy": "socks5://p.webshare.io:9999"
   ],
   "plugins": {
     "antiAfk": true,
@@ -61,6 +63,11 @@ Edit `config/config.json` to set up your accounts and preferences. Example:
   }
 }
 ```
+## COmmands
+
+/stats
+/kick
+/shards - uses on screen stats to show shards.
 
 - **accounts**: list of bot accounts. Use your Microsoft email and set `"auth": "microsoft"`. The web dashboard, console logs and Discord embed will display the actual Minecraft username of each bot.
 - **plugins**: toggle individual behaviours.
