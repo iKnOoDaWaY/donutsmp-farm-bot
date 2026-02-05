@@ -3,7 +3,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const { SocksProxyAgent } = require('socks-proxy-agent');
-// const { viewer } = require('prismarine-viewer'); // Uncomment when canvas is installed
+const { viewer } = require('prismarine-viewer'); // Uncomment when canvas is installed
 
 const serverConfig = require('./config/bot.config');
 const logger = require('./utils/logger');
@@ -111,16 +111,16 @@ function createBot(accountConfig) {
   const viewerPort = 3001 + Object.keys(bots).length; // Unique port: 3001, 3002, ...
   bot.viewerPort = viewerPort;
 
-  // try {
-  //   viewer(bot, {
-  //     port: viewerPort,
-  //     firstPerson: true, // or false for third-person
-  //     viewDistance: 6
-  //   });
-  //   logger.info(`[VIEWER] Started prismarine-viewer for ${accountConfig.username} on http://localhost:${viewerPort}`);
-  // } catch (viewerErr) {
-  //   logger.warn(`[VIEWER] Failed to start viewer for ${accountConfig.username}: ${viewerErr.message} (canvas module missing?)`);
-  // }
+	try {
+    mineflayerViewer(bot, {
+      port: viewerPort,
+      firstPerson: false,     // false = third person (easier to see bot), true = first person
+      viewDistance: 6         // 4-8 is good; higher = slower
+    });
+    logger.success(`[VIEWER] Started for ${bot.username} → http://localhost:${viewerPort}`);
+  } catch (err) {
+    logger.error(`[VIEWER] Failed to start for ${bot.username}: ${err.message}`);
+  }
 
   // Chat parser for shards AND keys
   bot.on('message', (jsonMsg) => {
