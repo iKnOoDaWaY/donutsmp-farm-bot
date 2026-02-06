@@ -61,7 +61,7 @@ function broadcastBotsStatus() {
       food: bot?.food ?? 'N/A',
       dimension: bot?.game?.dimension ?? 'N/A',
       position: bot?.entity?.position ? `${Math.floor(bot.entity.position.x)}, ${Math.floor(bot.entity.position.y)}, ${Math.floor(bot.entity.position.z)}` : 'N/A',
-      proxy: bot?.hasProxy ? 'Yes' : 'No', // FIXED: uses custom flag
+      proxy: bot?.hasProxy ? 'Yes' : 'No', // Now reliable
       viewerPort: bot?.viewerPort || null,
       viewerRunning: bot?.viewerRunning || false,
       isAfkFarming: bot?.isAfkFarming || false
@@ -78,11 +78,8 @@ function startViewerForBot(bot) {
     console.log(`[VIEWER] Already running for ${bot.username} (port ${bot.viewerPort})`);
     return;
   }
-
   console.log(`[VIEWER] Attempting to start viewer for ${bot.username} on port ${bot.viewerPort}`);
-
   let started = false;
-
   const forceStart = () => {
     if (started) return;
     started = true;
@@ -103,9 +100,7 @@ function startViewerForBot(bot) {
       bot.viewerRunning = false;
     }
   };
-
   const timeoutId = setTimeout(forceStart, 15000);
-
   bot.waitForChunksToLoad(() => {
     clearTimeout(timeoutId);
     if (started) return;
@@ -137,9 +132,7 @@ function stopViewerForBot(bot) {
     console.log(`[VIEWER] No active viewer to stop for ${bot.username}`);
     return;
   }
-
   console.log(`[VIEWER] Attempting to stop viewer for ${bot.username}`);
-
   try {
     bot.viewerInstance.close();
     console.log(`[VIEWER] Viewer closed successfully`);
@@ -171,14 +164,33 @@ function createBot(accountConfig) {
     username: accountConfig.username,
     auth: accountConfig.auth,
     skipValidation: true,
-    compress: false, // Critical for Webshare proxies
+    compress: false,
   };
 
   botOptions.hasProxy = false; // Initialize flag
 
+  if (accountConfig.proxy) {
+    try {
+      botOptions.agent = new SocksProxyAgent(accountConfig.proxy, {
+        timeout: 60000,
+        keepAlive: true,
+        keepAliveMsecs: 2000,
+        retries: 3
+      });
+      logger.info(`Proxy enabled for ${accountConfig.username}: ${accountConfig.proxy}`);
+      botOptions.hasProxy = true; // Set flag
+    } catch (proxyErr) {
+      logger.error(`Failed to set proxy for ${accountConfig.username}: ${proxyErr.message}`);
+    }
+  } else {
+    logger.info(`No proxy for ${accountConfig.username} — direct connection`);
+  }
+
   const bot = mineflayer.createBot(botOptions);
 
-  // Load pathfinder
+  // NOW set the flag (bot exists)
+  bot.hasProxy = botOptions.hasProxy;
+
   bot.loadPlugin(pathfinder.pathfinder);
   console.log('[Pathfinder] Loaded for', bot.username);
 
@@ -189,12 +201,10 @@ function createBot(accountConfig) {
   bot.keys = null;
   bot.isAfkFarming = false;
 
-  // Viewer setup
   bot.viewerPort = 3001 + Object.keys(bots).length - 1;
   bot.viewerRunning = false;
   bot.viewerInstance = null;
 
-  // Early AFK listener
   bot.on('message', function earlyAfkCheck(jsonMsg) {
     const text = jsonMsg.toString().trim().toLowerCase();
     if (text.includes('you teleported to the ᴀꜰᴋ')) {
@@ -205,40 +215,6 @@ function createBot(accountConfig) {
     }
   });
 
-	if (accountConfig.proxy) {
-  let proxyString = '';
-  if (typeof accountConfig.proxy === 'string') {
-    proxyString = accountConfig.proxy;
-  } else if (accountConfig.proxy.type === 'socks5') {
-    const auth = accountConfig.proxy.auth;
-    const authPart = auth ? `${auth.username}:${auth.password}@` : '';
-    proxyString = `socks5://${authPart}${accountConfig.proxy.host}:${accountConfig.proxy.port}`;
-  } else {
-    logger.error(`Invalid proxy format for ${accountConfig.username}`);
-    proxyString = null;
-  }
-
-  if (proxyString) {
-    try {
-      botOptions.agent = new SocksProxyAgent(proxyString, {
-        timeout: 60000,
-        keepAlive: true,
-        keepAliveMsecs: 2000,
-        retries: 3
-      });
-      logger.info(`Proxy enabled for ${accountConfig.username}: ${proxyString}`);
-      bot.hasProxy = true;
-    } catch (proxyErr) {
-      logger.error(`Failed to set proxy for ${accountConfig.username}: ${proxyErr.message}`);
-      bot.hasProxy = false;
-    }
-  }
-} else {
-  logger.info(`No proxy for ${accountConfig.username} — direct connection`);
-  bot.hasProxy = false;
-}
-
-  // Chat parser
   bot.on('message', (jsonMsg) => {
     const text = jsonMsg.toString().trim().toLowerCase();
     console.log('[CHAT RAW]', text);
