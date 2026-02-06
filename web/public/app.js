@@ -176,7 +176,7 @@ function showViewerButtons(isRunning, port) {
   openBtn.disabled = !isRunning;
   openBtn.onclick = () => {
     if (isRunning && port) {
-      window.open(`http://localhost:${port}`, '_blank');
+      window.open(`http://192.168.1.166:${port}`, '_blank');
     }
   };
 }
@@ -194,7 +194,7 @@ function stopViewer(botName) {
 function openViewer(port) {
   console.log(`[Dashboard] Opening viewer on port ${port}`);
   if (port) {
-    window.open(`http://localhost:${port}`, '_blank');
+    window.open(`http://192.168.1.166:${port}`, '_blank');
   } else {
     console.warn('[Dashboard] No port available for viewer');
   }
