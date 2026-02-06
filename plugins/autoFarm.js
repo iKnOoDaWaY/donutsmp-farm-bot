@@ -32,7 +32,7 @@ module.exports = (bot) => {
         }
 
         const pos = bot.entity.position;
-        logger.info(`[AutoFarm] Current pos: x=${pos.x.toFixed(2)}, y=${pos.y.toFixed(2)}, z=${pos.z.toFixed(2)}`);
+        //logger.info(`[AutoFarm] Current pos: x=${pos.x.toFixed(2)}, y=${pos.y.toFixed(2)}, z=${pos.z.toFixed(2)}`);
 
         const isAtSpot =
           Math.abs(pos.x - 21) < 1.5 &&
@@ -70,7 +70,7 @@ module.exports = (bot) => {
   });
 
   bot.on('path_update', (r) => {
-    logger.info(`[AutoFarm] Path status: ${r.status} - ${r.visitedNodes} nodes`);
+    //logger.info(`[AutoFarm] Path status: ${r.status} - ${r.visitedNodes} nodes`);
     if (r.status === 'noPath') {
       logger.warn('[AutoFarm] NO PATH FOUND — check if spot is reachable');
     }
