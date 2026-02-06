@@ -1,5 +1,7 @@
 # Minecraft Multi‑Account Bot
 
+Join our Discord - [https://discord.gg/PGuyZCh7](https://discord.gg/PGuyZCh7)
+
 **Support me:** If you'd like to support my work on this project, feel free to run the following command on **DonutSMP**:  
 `/pay scratchybyte [amount]`
 `/pay Luoxy_ [amount]`
