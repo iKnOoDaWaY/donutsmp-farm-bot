@@ -61,7 +61,7 @@ function broadcastBotsStatus() {
       food: bot?.food ?? 'N/A',
       dimension: bot?.game?.dimension ?? 'N/A',
       position: bot?.entity?.position ? `${Math.floor(bot.entity.position.x)}, ${Math.floor(bot.entity.position.y)}, ${Math.floor(bot.entity.position.z)}` : 'N/A',
-      proxy: bot?.hasProxy ? 'Yes' : 'No',
+      proxy: bot?.hasProxy ? 'Yes' : 'No', // FIXED: uses custom flag
       viewerPort: bot?.viewerPort || null,
       viewerRunning: bot?.viewerRunning || false,
       isAfkFarming: bot?.isAfkFarming || false
@@ -174,22 +174,7 @@ function createBot(accountConfig) {
     compress: false, // Critical for Webshare proxies
   };
 
-  if (accountConfig.proxy) {
-    try {
-      botOptions.agent = new SocksProxyAgent(accountConfig.proxy, {
-        timeout: 60000,
-        keepAlive: true,
-        keepAliveMsecs: 2000,
-        retries: 3
-      });
-      logger.info(`Proxy enabled for ${accountConfig.username}: ${accountConfig.proxy}`);
-	  bot.hasProxy = true;
-    } catch (proxyErr) {
-      logger.error(`Failed to set proxy for ${accountConfig.username}: ${proxyErr.message}`);
-    }
-  } else {
-    logger.info(`No proxy for ${accountConfig.username} — direct connection`);
-  }
+  botOptions.hasProxy = false; // Initialize flag
 
   const bot = mineflayer.createBot(botOptions);
 
@@ -209,7 +194,51 @@ function createBot(accountConfig) {
   bot.viewerRunning = false;
   bot.viewerInstance = null;
 
-  // Chat parser for shards/keys
+  // Early AFK listener
+  bot.on('message', function earlyAfkCheck(jsonMsg) {
+    const text = jsonMsg.toString().trim().toLowerCase();
+    if (text.includes('you teleported to the ᴀꜰᴋ')) {
+      logger.success('[Early] Caught "you teleported to the ᴀꜰᴋ" — AFK confirmed');
+      bot.isAfkFarming = true;
+      broadcastBotsStatus();
+      bot.off('message', earlyAfkCheck);
+    }
+  });
+
+	if (accountConfig.proxy) {
+  let proxyString = '';
+  if (typeof accountConfig.proxy === 'string') {
+    proxyString = accountConfig.proxy;
+  } else if (accountConfig.proxy.type === 'socks5') {
+    const auth = accountConfig.proxy.auth;
+    const authPart = auth ? `${auth.username}:${auth.password}@` : '';
+    proxyString = `socks5://${authPart}${accountConfig.proxy.host}:${accountConfig.proxy.port}`;
+  } else {
+    logger.error(`Invalid proxy format for ${accountConfig.username}`);
+    proxyString = null;
+  }
+
+  if (proxyString) {
+    try {
+      botOptions.agent = new SocksProxyAgent(proxyString, {
+        timeout: 60000,
+        keepAlive: true,
+        keepAliveMsecs: 2000,
+        retries: 3
+      });
+      logger.info(`Proxy enabled for ${accountConfig.username}: ${proxyString}`);
+      bot.hasProxy = true;
+    } catch (proxyErr) {
+      logger.error(`Failed to set proxy for ${accountConfig.username}: ${proxyErr.message}`);
+      bot.hasProxy = false;
+    }
+  }
+} else {
+  logger.info(`No proxy for ${accountConfig.username} — direct connection`);
+  bot.hasProxy = false;
+}
+
+  // Chat parser
   bot.on('message', (jsonMsg) => {
     const text = jsonMsg.toString().trim().toLowerCase();
     console.log('[CHAT RAW]', text);
@@ -242,29 +271,15 @@ function createBot(accountConfig) {
     }
   });
 
-  // EARLY AFK LISTENER (catches messages before spawn)
-  bot.on('message', function earlyAfkCheck(jsonMsg) {
-    const text = jsonMsg.toString().trim().toLowerCase();
-    if (text.includes('you teleported to the ᴀꜰᴋ')) {
-      logger.success('[Early] Caught "you teleported to the ᴀꜰᴋ" — AFK confirmed');
-      bot.isAfkFarming = true;
-      broadcastBotsStatus();
-      bot.off('message', earlyAfkCheck);
-    }
-  });
-
   bot.once('spawn', () => {
     logger.success(`Bot ${bot.username} spawned`);
 
-    // Load plugins
     if (cfg.plugins && cfg.plugins.antiAfk) antiAfk(bot);
     if (cfg.plugins && cfg.plugins.randomMove) randomMove(bot);
     if (cfg.plugins && cfg.plugins.chatLogger) chatLogger(bot);
 
-    // Load autoFarm (movement + shard logic)
     require('./plugins/autoFarm')(bot);
 
-    // Auto-lobby / warp
     if (cfg.plugins && cfg.plugins.autoLobby) {
       setTimeout(() => autoLobby(bot), 2000);
     } else if (cfg.plugins && cfg.plugins.autoSpawnCommand) {
@@ -396,16 +411,20 @@ io.on('connection', socket => {
       return;
     }
     if (action === 'disconnect') {
+      console.log(`[Maintenance] Disconnecting bot ${botName}`);
       bot.end();
       socket.emit('maintenance-result', { message: `Disconnected ${botName}` });
     } else if (action === 'reconnect') {
+      console.log(`[Maintenance] Reconnecting bot ${botName}`);
       bot.end();
       if (bot.accountConfig) {
         setTimeout(() => {
           createBot(bot.accountConfig);
+          console.log(`[Maintenance] Recreated bot ${botName}`);
           socket.emit('maintenance-result', { message: `Reconnected ${botName}` });
         }, 2000);
       } else {
+        console.error(`[Maintenance] No stored config for ${botName}`);
         socket.emit('maintenance-result', { message: `Reconnect failed: config missing` });
       }
     }
