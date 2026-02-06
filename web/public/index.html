@@ -76,11 +76,6 @@
       border-radius: 6px;
       cursor: pointer;
       font-size: 0.9em;
-      transition: opacity 0.2s;
-    }
-    .control-btn:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
     }
     .disconnect { background: #d73a49; color: white; }
     .reconnect { background: #238636; color: white; }
@@ -158,9 +153,9 @@
       <input type="text" id="global-chat-input" placeholder="Type message to send to all bots..." autocomplete="off" />
       <button type="submit">Send to All</button>
     </form>
+    <button style="margin-top: 10px; background: #d73a49;" onclick="clearChat()">Clear Chat</button>
   </div>
 </div>
-
 <script>
   const socket = io();
 
@@ -168,7 +163,6 @@
     console.log('Connected to socket.io');
   });
 
-  // Live bot stats update
   socket.on('bots', (botsData) => {
     const grid = document.getElementById('bot-grid');
     grid.innerHTML = '';
@@ -184,9 +178,8 @@
         <div class="bot-header">
           <div class="status-dot ${bot.online ? 'online' : 'offline'}"></div>
           <h3>${bot.minecraftUsername || configName}</h3>
-		  ${bot.isAfkFarming ? '<span style="color: #00ff00; font-weight: bold; margin-left: 10px;">AFK Farming</span>' : ''}
         </div>
-        <div class="stat-line"><span class="label">config:</span> ${configName}</div>
+        <div class="stat-line"><span class="label">Config:</span> ${configName}</div>
         <div class="stat-line"><span class="label">Status:</span> ${bot.online ? '🟢 Online' : '🔴 Offline'}</div>
         <div class="stat-line"><span class="label">Shards:</span> ${bot.shards}</div>
         <div class="stat-line"><span class="label">Uptime:</span> ${formatUptime(bot.uptime)}</div>
@@ -199,9 +192,9 @@
           <span class="label">Next Shard:</span> ${countdownText}
         </div>
 
-        <!-- Viewer controls - only show if bot is online -->
+        <!-- Viewer controls - only if online -->
         ${bot.online ? `
-          <div class="control-buttons" style="margin-top: 15px;">
+          <div class="control-buttons" style="margin-top: 15px; gap: 10px;">
             <button class="control-btn"
                     style="background: ${bot.viewerRunning ? '#d73a49' : '#238636'}; color: white;"
                     onclick="${bot.viewerRunning ? `stopViewer('${configName}')` : `startViewer('${configName}')`}">
@@ -231,9 +224,9 @@
     });
   });
 
-  // Auto-decrement countdowns every second
+  // Auto-decrement countdowns every second (only if client has a value)
   setInterval(() => {
-    const countdownElements = document.querySelectorAll('.countdown-low, .stat-line:not(.countdown-low)');
+    const countdownElements = document.querySelectorAll('[id^="countdown-"]');
     countdownElements.forEach(el => {
       let text = el.textContent.trim();
       if (text.endsWith('s') && !isNaN(parseInt(text))) {
@@ -268,11 +261,6 @@
     chatArea.appendChild(msgDiv);
     chatArea.scrollTop = chatArea.scrollHeight;
   });
-  
-  socket.on('maintenance-result', (data) => {
-  alert(data.message); // or show in a toast/div
-  console.log('[Dashboard] Maintenance result:', data.message);
- });
 
   // Global chat send
   document.getElementById('global-chat-form').addEventListener('submit', (e) => {
@@ -287,7 +275,6 @@
   // Per-bot control functions
   function controlBot(botName, action) {
     socket.emit('maintenance', { action, bot: botName });
-    alert(`Sent ${action} command for ${botName}`);
   }
 
   function sendChat(botName) {
@@ -306,7 +293,7 @@
     return `${h > 0 ? h + 'h ' : ''}${m}m ${s}s`;
   }
 
-  // Viewer control functions (called from card buttons)
+  // Viewer control functions
   function startViewer(botName) {
     socket.emit('startViewer', { username: botName });
   }
@@ -316,11 +303,12 @@
   }
 
   function openViewer(port) {
-    if (port) {
-      window.open(`http://192.168.1.166:${port}`, '_blank', 'width=900,height=700');
-    } else {
-      alert('Viewer port not available');
-    }
+    if (port) window.open(`http://localhost:${port}`, '_blank');
+  }
+
+  // Clear chat function (new)
+  function clearChat() {
+    document.getElementById('chat-messages').innerHTML = '';
   }
 </script>
 </body>

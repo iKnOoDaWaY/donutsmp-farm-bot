@@ -65,6 +65,7 @@ function broadcastBotsStatus() {
       viewerPort: bot?.viewerPort || null,
       viewerRunning: bot?.viewerRunning || false,
       isAfkFarming: bot?.isAfkFarming || false
+	  isMaintenance: bot?.isMaintenance || false
     };
   }
   io.emit('bots', statuses);
@@ -236,6 +237,19 @@ function createBot(accountConfig) {
         return;
       }
     }
+	if (text.includes('we are under maintenance') || text.includes('server under maintenance')) {
+  logger.warn('[Maintenance] Server maintenance detected — pausing bot for 15-30 min');
+  bot.isMaintenance = true;
+  broadcastBotsStatus(); // Update dashboard to show popup
+
+  const pauseMs = Math.floor(Math.random() * (30000 - 15000 + 1)) + 15000; // 15-30 min in ms
+  setTimeout(() => {
+    bot.isMaintenance = false;
+    broadcastBotsStatus();
+    logger.info('[Maintenance] Pause ended — reconnecting');
+    bot.end(); // Trigger reconnect via autoReconnect
+  }, pauseMs);
+}
 
     const keyRegex = /(?:received|got|claimed|earned)\s*(\d+)\s*(?:crate\s*key|key)/i;
     const keyMatch = text.match(keyRegex);
