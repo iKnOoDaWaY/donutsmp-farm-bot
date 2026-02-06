@@ -4,66 +4,77 @@ const { GoalBlock } = require('mineflayer-pathfinder').goals;
 module.exports = (bot) => {
   const logger = require('../utils/logger');
 
-  const TARGET_X = 21;
-  const TARGET_Y = 67;
-  const TARGET_Z = 92;
+  logger.success('[AutoFarm] Plugin LOADED for bot: ' + (bot.username || 'unnamed bot'));
 
-  // Listen for warp confirmation
+  if (!bot.pathfinder) {
+    logger.error('[AutoFarm] CRITICAL: Pathfinder plugin NOT loaded — movement will fail!');
+    return;
+  }
+
+  logger.info('[AutoFarm] Pathfinder is available — registering chat listener');
+
   bot.on('message', (jsonMsg) => {
-    const text = jsonMsg.toString().trim().toLowerCase();
+    const text = jsonMsg.toString().trim();
+    logger.info(`[AutoFarm] RAW MESSAGE RECEIVED: "${text}"`);
 
-    if (text.includes('you were warped to afk.')) {
-      logger.info('[AutoFarm] Detected warp to AFK — starting delay before moving');
+    const lowerText = text.toLowerCase();
 
-      // Random delay between 7 and 20 seconds
+    if (lowerText.includes('you were warped to afk.')) {
+      logger.success('[AutoFarm] WARP TO AFK DETECTED — starting random delay');
+
       const delayMs = Math.floor(Math.random() * (20000 - 7000 + 1)) + 7000;
+      logger.info(`[AutoFarm] Random delay: ${delayMs / 1000} seconds`);
 
       setTimeout(() => {
-        const pos = bot.entity.position;
-
-        // Check if already very close (tolerance 1.5 blocks)
-        const isAtSpot =
-          Math.abs(pos.x - TARGET_X) < 1.5 &&
-          Math.abs(pos.y - TARGET_Y) < 1.5 &&
-          Math.abs(pos.z - TARGET_Z) < 1.5;
-
-        if (isAtSpot) {
-          logger.info(`[AutoFarm] Already at target (${TARGET_X}, ${TARGET_Y}, ${TARGET_Z}) — skipping pathfinding`);
+        if (!bot.entity) {
+          logger.warn('[AutoFarm] Bot entity missing — cannot move');
           return;
         }
 
-        logger.info(`[AutoFarm] Moving to target: ${TARGET_X}, ${TARGET_Y}, ${TARGET_Z}`);
+        const pos = bot.entity.position;
+        logger.info(`[AutoFarm] Current pos: x=${pos.x.toFixed(2)}, y=${pos.y.toFixed(2)}, z=${pos.z.toFixed(2)}`);
 
-        // Set pathfinding goal
-        bot.pathfinder.setGoal(new GoalBlock(TARGET_X, TARGET_Y, TARGET_Z));
+        const isAtSpot =
+          Math.abs(pos.x - 21) < 1.5 &&
+          Math.abs(pos.y - 67) < 1.5 &&
+          Math.abs(pos.z - 92) < 1.5;
 
-        // Jump once right after starting to move
+        if (isAtSpot) {
+          logger.info('[AutoFarm] Already at target spot — skipping');
+          return;
+        }
+
+        logger.info('[AutoFarm] Setting pathfinding goal to 21, 67, 92');
+        bot.pathfinder.setGoal(new GoalBlock(21, 67, 92));
+
         setTimeout(() => {
+          logger.info('[AutoFarm] Performing single jump');
           bot.setControlState('jump', true);
-          setTimeout(() => bot.setControlState('jump', false), 300); // jump for ~0.3s
-          logger.info('[AutoFarm] Performed one jump');
-        }, 500); // small delay so it starts moving first
-
+          setTimeout(() => bot.setControlState('jump', false), 300);
+        }, 800);
       }, delayMs);
-	  
-	  // Detect warp to AFK spot confirmation
-  if (text.includes('you teleported to the ᴀꜰᴋ')) {
-    logger.success('[AutoFarm] Confirmed: Teleported to AFK spot');
-    bot.isAfkFarming = true; // Flag that farming is active
+    }
 
-    // Optional: Update dashboard immediately
-    broadcastBotsStatus(); // If this function is global
-  }
-});
-
-// After the jump in your pathfinding timeout
-setTimeout(() => {
-  bot.setControlState('jump', true);
-  setTimeout(() => bot.setControlState('jump', false), 300);
-  logger.info('[AutoFarm] Performed one jump');
-
-  // Now listen for the teleport confirmation (already set up above)
-}, 500);
+    if (lowerText.includes('you teleported to the ᴀꜰᴋ')) {
+      logger.success('[AutoFarm] AFK TELEPORT CONFIRMED — farming active');
+      bot.isAfkFarming = true;
+      // Update dashboard
+      if (typeof broadcastBotsStatus === 'function') {
+        broadcastBotsStatus();
+      }
     }
   });
+
+  bot.on('goal_reached', () => {
+    logger.success('[AutoFarm] Target reached!');
+  });
+
+  bot.on('path_update', (r) => {
+    logger.info(`[AutoFarm] Path status: ${r.status} - ${r.visitedNodes} nodes`);
+    if (r.status === 'noPath') {
+      logger.warn('[AutoFarm] NO PATH FOUND — check if spot is reachable');
+    }
+  });
+
+  logger.info('[AutoFarm] Chat listener registered — waiting for warp message');
 };
