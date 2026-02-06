@@ -183,59 +183,101 @@ function createBot(accountConfig) {
 bot.once('spawn', () => {
   logger.success(`Bot ${bot.username} spawned`);
 
-  // Load plugins immediately (not inside a timeout)
+  // Load plugins immediately
   if (cfg.plugins && cfg.plugins.antiAfk) antiAfk(bot);
   if (cfg.plugins && cfg.plugins.randomMove) randomMove(bot);
   if (cfg.plugins && cfg.plugins.chatLogger) chatLogger(bot);
+
+  // Auto-lobby / warp
   if (cfg.plugins && cfg.plugins.autoLobby) {
     setTimeout(() => autoLobby(bot), 2000);
   } else if (cfg.plugins && cfg.plugins.autoSpawnCommand) {
     setTimeout(() => {
       bot.chat('/warp afk');
-      // setTimeout(() => bot.chat('/lobby'), 3000); // commented out
     }, 5000);
   }
 
   broadcastBotsStatus();
 
-  // Send /shards after 8 seconds (login delay)
+  // Initial /shards query after login delay
   setTimeout(() => {
     if (bot.entity) {
-      // bot.chat('/shards'); // ← still commented out
+      // bot.chat('/shards'); // still commented
       logger.info(`[SHARDS] Login query sent for ${bot.username || accountConfig.username}`);
     }
   }, 8000);
 
-  // Read sidebar after 5 seconds (give server time to send it)
-  setTimeout(() => {
-    const sidebar = bot.scoreboard.sidebar;
-    if (sidebar) {
-      console.log('Donut SMP', sidebar.title);
-
-      const lines = Object.values(sidebar.itemsMap)
-        .sort((a, b) => b.value - a.value)
-        .map(item => item.name);
-
-      console.log('Sidebar lines:', lines);
-
-      // Optional: Parse shards from sidebar as fallback
-      lines.forEach(line => {
-        const clean = line.replace(/§./g, ''); // remove color codes
-        if (clean.includes('Shards')) {
-          const match = clean.match(/Shards\s*([\d.]+[KMB]?)/i);
-          if (match) {
-            let val = parseFloat(match[1]);
-            if (match[1].toUpperCase().endsWith('K')) val *= 1000;
-            if (match[1].toUpperCase().endsWith('M')) val *= 1_000_000;
-            bot.shards = Math.round(val);
-            console.log(`Parsed shards from sidebar: ${bot.shards}`);
-          }
-        }
-      });
-    } else {
-      console.log('No sidebar scoreboard found yet');
+  // Sidebar reading — retry until we get lines
+  const sidebarCheck = setInterval(() => {
+    let sidebar = null;
+    for (const objName in bot.scoreboard) {
+      if (bot.scoreboard[objName] && bot.scoreboard[objName].itemsMap) {
+        sidebar = bot.scoreboard[objName];
+        break;
+      }
     }
-  }, 5000); // ← 5 seconds is usually enough
+
+    if (sidebar) {
+      console.log('Sidebar objective found:', sidebar.name || 'DONUT SMP');
+
+      // Clean title (handle chat component)
+      const titleRaw = sidebar.title ? (sidebar.title.toString ? sidebar.title.toString() : JSON.stringify(sidebar.title)) : 'No title';
+      const titleClean = titleRaw.replace(/§./g, '').replace(/\[object Object\]/g, '').trim();
+      console.log('Sidebar title (clean):', titleClean || '(empty)');
+
+      // Get lines
+      const lines = Object.values(sidebar.itemsMap || {})
+        .sort((a, b) => b.value - a.value)
+        .map(item => item.displayName || item.name || 'DONUT SMP');
+
+      if (lines.length > 0) {
+        console.log('Sidebar lines:', lines);
+        clearInterval(sidebarCheck); // Stop once we have data
+
+        // Parse useful values (example)
+        lines.forEach(line => {
+          const clean = line.replace(/§./g, '').trim();
+          console.log('Clean line:', clean);
+
+          // Shards example
+          if (clean.includes('Shards')) {
+            const match = clean.match(/Shards\s*([\d,.]+[KMB]?)/i);
+            if (match) {
+              let val = parseFloat(match[1].replace(',', ''));
+              if (match[1].toUpperCase().endsWith('K')) val *= 1000;
+              if (match[1].toUpperCase().endsWith('M')) val *= 1000000;
+              bot.shards = Math.round(val);
+              console.log(`Parsed shards: ${bot.shards}`);
+            }
+          }
+
+          // Money example
+          if (clean.includes('Money')) {
+            const match = clean.match(/Money\s*\$?\s*([\d,.]+[KMB]?)/i);
+            if (match) {
+              let val = parseFloat(match[1].replace(',', ''));
+              if (match[1].toUpperCase().endsWith('K')) val *= 1000;
+              if (match[1].toUpperCase().endsWith('M')) val *= 1000000;
+              bot.money = Math.round(val);
+              console.log(`Parsed money: $${bot.money}`);
+            }
+          }
+
+          // Add more parsers for Kills, Deaths, Playtime, etc. as needed
+        });
+      } else {
+        console.log('Sidebar found but no lines yet — retrying...');
+      }
+    } else {
+      console.log('No scoreboard objective found yet — retrying...');
+    }
+  }, 3000); // Check every 3 seconds
+
+  // Stop checking after 60 seconds max
+  setTimeout(() => {
+    clearInterval(sidebarCheck);
+    console.log('Sidebar check timed out after 60s');
+  }, 60000);
 });
 
   bot.on('death', () => {
@@ -329,14 +371,24 @@ io.on('connection', socket => {
   });
 
   // Viewer controls
-  socket.on('startViewer', (data) => {
+	socket.on('startViewer', (data) => {
+    console.log(`[Socket] startViewer requested for ${data.username}`);
     const bot = bots[data.username];
-    if (bot) startViewerForBot(bot);
+    if (bot) {
+      startViewerForBot(bot);
+    } else {
+      console.warn(`[Socket] Bot not found: ${data.username}`);
+    }
   });
 
-  socket.on('stopViewer', (data) => {
+    socket.on('stopViewer', (data) => {
+    console.log(`[Socket] stopViewer requested for ${data.username}`);
     const bot = bots[data.username];
-    if (bot) stopViewerForBot(bot);
+    if (bot) {
+      stopViewerForBot(bot);
+    } else {
+      console.warn(`[Socket] Bot not found: ${data.username}`);
+    }
   });
 });
 

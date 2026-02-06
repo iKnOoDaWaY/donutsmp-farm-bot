@@ -181,6 +181,25 @@ function showViewerButtons(isRunning, port) {
   };
 }
 
+function startViewer(botName) {
+  console.log(`[Dashboard] Sending startViewer for ${botName}`);
+  socket.emit('startViewer', { username: botName });
+}
+
+function stopViewer(botName) {
+  console.log(`[Dashboard] Sending stopViewer for ${botName}`);
+  socket.emit('stopViewer', { username: botName });
+}
+
+function openViewer(port) {
+  console.log(`[Dashboard] Opening viewer on port ${port}`);
+  if (port) {
+    window.open(`http://localhost:${port}`, '_blank');
+  } else {
+    console.warn('[Dashboard] No port available for viewer');
+  }
+}
+
 /**
  * Hide viewer buttons
  */
