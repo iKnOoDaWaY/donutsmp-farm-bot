@@ -7,7 +7,7 @@
 [🇫🇷 Voir la version française](README_fr.md)
 
 ## Overview
-<img src="https://i.imgur.com/TXcZH3X.png" alt="Alt text" width="1200" height="900">
+<img src="https://i.imgur.com/zwoxCyS.png" alt="Alt text" width="1200" height="900">
 This project lets you run multiple Minecraft bot accounts using the [mineflayer](https://github.com/PrismarineJS/mineflayer) library. It also includes a web dashboard and Discord integration to monitor and control the bots in real time. You can switch between bots, view their health and position, send chat messages (if enabled) and see their scoreboard.
 
 ## Features
