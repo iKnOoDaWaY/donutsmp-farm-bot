@@ -5,6 +5,7 @@ const { Server } = require('socket.io');
 const { SocksProxyAgent } = require('socks-proxy-agent');
 const { mineflayer: mineflayerViewer } = require('prismarine-viewer');
 const { GoalBlock } = require('mineflayer-pathfinder').goals;
+const pathfinder = require('mineflayer-pathfinder');
 
 const serverConfig = require('./config/bot.config');
 const logger = require('./utils/logger');
