@@ -1,60 +1,90 @@
-const logger = require('../utils/logger');
+// plugins/autoFarm.js
+const { GoalBlock } = require('mineflayer-pathfinder').goals;
 
-/**
- * Automatically sends /warp afk on connection, but skips if already in an AFK area.
- * Specifically detects messages like "you teleported to the ᴀꜰᴋ 11", "you teleported to the ᴀꜰᴋ 52", etc.
- * @param {object} bot The mineflayer bot instance
- */
-module.exports = function autoLobby(bot) {
-  let detectedAfk = false;
+module.exports = (bot) => {
+  const logger = require('../utils/logger');
 
-  // Exact pattern match for "you teleported to the ᴀꜰᴋ" followed by a number
-  // This matches case-insensitively and allows for minor variations in spacing
-  const afkPattern = /you teleported to the ᴀꜰᴋ\s*\d+/i;
+  logger.info('[AutoFarm] Plugin loaded for ' + (bot.username || 'unnamed bot'));
 
-  // Listen for chat messages and store them for debugging
-  bot.locationChatLog = []; // Reset log
+  if (!bot.pathfinder) {
+    logger.error('[AutoFarm] Pathfinder plugin not loaded — movement disabled!');
+    return;
+  }
 
-  const afkListener = (jsonMsg) => {
-    const text = jsonMsg.toString().trim();
+  logger.info('[AutoFarm] Pathfinder ready — listening for AFK confirmation');
 
-    // Store every raw message for visibility
-    bot.locationChatLog.push(text);
+  const TARGET_X = 21;
+  const TARGET_Y = 67;
+  const TARGET_Z = 92;
 
-    // Debug: show every message being checked
-    console.log('[AFK DEBUG] Raw chat checked:', text);
+  let detectedAfk = false; // Flag to prevent repeated actions
 
-    // Check if this is the AFK teleport message
-    if (afkPattern.test(text)) {
+  // Chat listener — active from the beginning
+  bot.on('message', (jsonMsg) => {
+    const text = jsonMsg.toString().trim().toLowerCase();
+    logger.info('[AutoFarm] RAW CHAT RECEIVED: "' + text + '"');
+
+    // Only act once — when we first detect the confirmation message
+    if (!detectedAfk && text.includes('you teleported to the ᴀꜰᴋ')) {
       detectedAfk = true;
-      logger.info(`[AutoLobby] AFK teleport DETECTED: "${text}" → skipping /warp afk`);
-      bot.off('message', afkListener);
+      bot.isAfkFarming = true; // For dashboard green label
+      logger.success('[AutoFarm] AFK TELEPORT CONFIRMED — farming active');
+
+      // Update dashboard immediately
+      if (typeof broadcastBotsStatus === 'function') {
+        broadcastBotsStatus();
+      }
+
+      // Optional: Remove listener after first detection to save resources
+      // bot.off('message', arguments.callee); // Uncomment if you want to stop listening completely
+
+      // Start the movement sequence
+      const delayMs = Math.floor(Math.random() * (20000 - 7000 + 1)) + 7000;
+      logger.info(`[AutoFarm] Starting random delay: ${delayMs / 1000}s`);
+
+      setTimeout(() => {
+        if (!bot.entity) {
+          logger.warn('[AutoFarm] Bot entity missing — cannot move');
+          return;
+        }
+
+        const pos = bot.entity.position;
+        logger.info(`[AutoFarm] Current pos: x=${pos.x.toFixed(2)}, y=${pos.y.toFixed(2)}, z=${pos.z.toFixed(2)}`);
+
+        const isAtSpot =
+          Math.abs(pos.x - TARGET_X) < 1.5 &&
+          Math.abs(pos.y - TARGET_Y) < 1.5 &&
+          Math.abs(pos.z - TARGET_Z) < 1.5;
+
+        if (isAtSpot) {
+          logger.info('[AutoFarm] Already at target spot — no movement needed');
+          return;
+        }
+
+        logger.info(`[AutoFarm] Pathfinding to ${TARGET_X}, ${TARGET_Y}, ${TARGET_Z}`);
+        bot.pathfinder.setGoal(new GoalBlock(TARGET_X, TARGET_Y, TARGET_Z));
+
+        // Jump once after short delay
+        setTimeout(() => {
+          logger.info('[AutoFarm] Performing single jump');
+          bot.setControlState('jump', true);
+          setTimeout(() => bot.setControlState('jump', false), 300);
+        }, 800);
+      }, delayMs);
     }
-  };
+  });
 
-  bot.on('message', afkListener);
+  // Pathfinding feedback
+  bot.on('goal_reached', () => {
+    logger.success('[AutoFarm] Reached target spot!');
+  });
 
-  // Wait 15 seconds for the AFK message to arrive
-  setTimeout(() => {
-    if (detectedAfk) {
-      logger.info('[AutoLobby] Bot already in AFK area (teleport message detected) — /warp afk skipped');
-    } else {
-      const cmd = '/warp afk';
-      logger.info(`[AutoLobby] No AFK teleport message detected after 15s — sending ${cmd}`);
-      bot.chat(cmd);
+  bot.on('path_update', (r) => {
+    logger.info(`[AutoFarm] Path status: ${r.status} (${r.visitedNodes} nodes)`);
+    if (r.status === 'noPath') {
+      logger.warn('[AutoFarm] NO PATH — blocked or unreachable?');
     }
+  });
 
-    // Show all raw chat messages seen during the check (for easy debugging)
-    if (bot.locationChatLog.length > 0) {
-      logger.info('[AutoLobby] Full RAW chat log during location check:');
-      bot.locationChatLog.forEach((msg, i) => {
-        console.log(`  ${i + 1}. ${msg}`);
-      });
-    } else {
-      logger.info('[AutoLobby] No chat messages received during location check.');
-    }
-
-    // Clean up
-    bot.off('message', afkListener);
-  }, 30000); // 15 seconds
+  logger.info('[AutoFarm] Listener active — waiting for "you teleported to the ᴀꜰᴋ"');
 };

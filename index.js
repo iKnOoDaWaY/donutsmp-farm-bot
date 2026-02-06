@@ -201,6 +201,22 @@ function createBot(accountConfig) {
   bot.shards = null;
   bot.keys = null;
   bot.isAfkFarming = false; // For dashboard label
+  
+  // === EARLY LISTENER FOR TELEPORT CONFIRMATION ===
+  // Register BEFORE spawn so we catch messages that arrive very early
+  bot.on('message', function earlyAfkCheck(jsonMsg) {
+    const text = jsonMsg.toString().trim().toLowerCase();
+    console.log('[EarlyAfkCheck] Raw message:', text);
+
+    if (text.includes('you teleported to the ᴀꜰᴋ')) {
+      logger.success('[EarlyAfkCheck] Caught "you teleported to the ᴀꜰᴋ" — AFK confirmed early');
+      bot.isAfkFarming = true;
+      broadcastBotsStatus(); // Update dashboard with green label
+
+      // Optional: remove this early listener after confirmation
+      bot.off('message', earlyAfkCheck);
+    }
+  });
 
   // Viewer setup
   bot.viewerPort = 3001 + Object.keys(bots).length - 1;
