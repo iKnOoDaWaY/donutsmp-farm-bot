@@ -4,7 +4,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const { SocksProxyAgent } = require('socks-proxy-agent');
 const { mineflayer: mineflayerViewer } = require('prismarine-viewer');
-const pathfinder = require('mineflayer-pathfinder'); // Added for pathfinder
+const pathfinder = require('mineflayer-pathfinder');
 const { GoalBlock } = require('mineflayer-pathfinder').goals;
 
 const serverConfig = require('./config/bot.config');
@@ -63,7 +63,8 @@ function broadcastBotsStatus() {
       position: bot?.entity?.position ? `${Math.floor(bot.entity.position.x)}, ${Math.floor(bot.entity.position.y)}, ${Math.floor(bot.entity.position.z)}` : 'N/A',
       proxy: bot?.options?.agent ? 'Yes' : 'No',
       viewerPort: bot?.viewerPort || null,
-      viewerRunning: bot?.viewerRunning || false
+      viewerRunning: bot?.viewerRunning || false,
+      isAfkFarming: bot?.isAfkFarming || false
     };
   }
   io.emit('bots', statuses);
@@ -103,7 +104,7 @@ function startViewerForBot(bot) {
     }
   };
 
-  const timeoutId = setTimeout(forceStart, 15000); // 15s fallback
+  const timeoutId = setTimeout(forceStart, 15000);
 
   bot.waitForChunksToLoad(() => {
     clearTimeout(timeoutId);
@@ -137,24 +138,18 @@ function stopViewerForBot(bot) {
     return;
   }
 
-  console.log(`[VIEWER] Attempting to stop viewer for ${bot.username} (port ${bot.viewerPort})`);
+  console.log(`[VIEWER] Attempting to stop viewer for ${bot.username}`);
 
   try {
-    // Close the viewer server
     bot.viewerInstance.close();
-    console.log(`[VIEWER] Viewer server closed successfully`);
-
-    // Force cleanup
+    console.log(`[VIEWER] Viewer closed successfully`);
     bot.viewerInstance = null;
     bot.viewerRunning = false;
-
     logger.success(`[VIEWER] Stopped for ${bot.username}`);
-    broadcastBotsStatus(); // Update dashboard to reflect stopped state
+    broadcastBotsStatus();
   } catch (err) {
-    console.error(`[VIEWER] Failed to stop viewer for ${bot.username}:`, err.message);
+    console.error(`[VIEWER] Stop failed:`, err.message);
     console.error(err.stack);
-
-    // Force reset even on error
     bot.viewerInstance = null;
     bot.viewerRunning = false;
     broadcastBotsStatus();
@@ -176,7 +171,6 @@ function createBot(accountConfig) {
     username: accountConfig.username,
     auth: accountConfig.auth,
     skipValidation: true,
-    // compress: false, // Uncomment if compression issues occur
   };
 
   if (accountConfig.proxy) {
@@ -197,15 +191,18 @@ function createBot(accountConfig) {
 
   const bot = mineflayer.createBot(botOptions);
 
-  // Load pathfinder plugin (required for GoalBlock / setGoal)
+  // Load pathfinder plugin
   bot.loadPlugin(pathfinder.pathfinder);
-  bot.accountConfig = accountConfig;
+  console.log('[Pathfinder] Loaded for', bot.username);
+
   bot.sessionStart = Date.now();
   bots[accountConfig.username] = bot;
+  bot.accountConfig = accountConfig; // Store for reconnect
   bot.shards = null;
   bot.keys = null;
+  bot.isAfkFarming = false; // For dashboard label
 
-  // Viewer setup (off by default)
+  // Viewer setup
   bot.viewerPort = 3001 + Object.keys(bots).length - 1;
   bot.viewerRunning = false;
   bot.viewerInstance = null;
@@ -215,7 +212,6 @@ function createBot(accountConfig) {
     const text = jsonMsg.toString().trim().toLowerCase();
     console.log('[CHAT RAW]', text);
 
-    // Shard detection
     const shardRegex = /(?:your\s*shards\s*[:=-]\s*|shards\s*[:=-]\s*|\b)([\d.]+)([kmb]?)/i;
     const shardMatch = text.match(shardRegex);
     if (shardMatch && shardMatch[1]) {
@@ -234,7 +230,6 @@ function createBot(accountConfig) {
       }
     }
 
-    // Key detection
     const keyRegex = /(?:received|got|claimed|earned)\s*(\d+)\s*(?:crate\s*key|key)/i;
     const keyMatch = text.match(keyRegex);
     if (keyMatch && keyMatch[1]) {
@@ -253,6 +248,9 @@ function createBot(accountConfig) {
     if (cfg.plugins && cfg.plugins.randomMove) randomMove(bot);
     if (cfg.plugins && cfg.plugins.chatLogger) chatLogger(bot);
 
+    // Load autoFarm plugin (movement after warp)
+    require('./plugins/autoFarm')(bot);
+
     // Auto-lobby / warp
     if (cfg.plugins && cfg.plugins.autoLobby) {
       setTimeout(() => autoLobby(bot), 2000);
@@ -264,10 +262,9 @@ function createBot(accountConfig) {
 
     broadcastBotsStatus();
 
-    // Initial /shards query after login delay
+    // Initial /shards query
     setTimeout(() => {
       if (bot.entity) {
-        // bot.chat('/shards'); // still commented
         logger.info(`[SHARDS] Login query sent for ${bot.username || accountConfig.username}`);
       }
     }, 8000);
@@ -384,43 +381,42 @@ io.on('connection', socket => {
       console.warn(`[Socket] Bot not found: ${data.username}`);
     }
   });
-  
-socket.on('maintenance', (data) => {
-  const action = data.action;
-  const botName = data.bot;
-  console.log(`[Maintenance] Received ${action} request for bot ${botName}`);
 
-  const bot = bots[botName];
-  if (!bot) {
-    console.warn(`[Maintenance] Bot not found: ${botName}`);
-    socket.emit('maintenance-result', { message: `Bot ${botName} not found` });
-    return;
-  }
+  // Maintenance (disconnect/reconnect)
+  socket.on('maintenance', (data) => {
+    const action = data.action;
+    const botName = data.bot;
+    console.log(`[Maintenance] ${action} requested for ${botName}`);
 
-  if (action === 'disconnect') {
-    console.log(`[Maintenance] Disconnecting bot ${botName}`);
-    bot.end();
-    socket.emit('maintenance-result', { message: `Disconnected ${botName}` });
-  } else if (action === 'reconnect') {
-    console.log(`[Maintenance] Reconnecting bot ${botName}`);
-    bot.end(); // End current connection
-
-    // Recreate using stored config
-    if (bot.accountConfig) {
-      setTimeout(() => {
-        createBot(bot.accountConfig);
-        console.log(`[Maintenance] Recreated bot ${botName}`);
-        socket.emit('maintenance-result', { message: `Reconnected ${botName}` });
-      }, 2000); // small delay to let old connection clean up
-    } else {
-      console.error(`[Maintenance] No stored config for ${botName} — cannot reconnect`);
-      socket.emit('maintenance-result', { message: `Cannot reconnect ${botName}: config missing` });
+    const bot = bots[botName];
+    if (!bot) {
+      console.warn(`[Maintenance] Bot not found: ${botName}`);
+      socket.emit('maintenance-result', { message: `Bot ${botName} not found` });
+      return;
     }
-  } else {
-    console.warn(`[Maintenance] Unknown action: ${action}`);
-    socket.emit('maintenance-result', { message: `Unknown action: ${action}` });
-  }
-});
+
+    if (action === 'disconnect') {
+      console.log(`[Maintenance] Disconnecting bot ${botName}`);
+      bot.end();
+      socket.emit('maintenance-result', { message: `Disconnected ${botName}` });
+    } else if (action === 'reconnect') {
+      console.log(`[Maintenance] Reconnecting bot ${botName}`);
+      bot.end();
+      if (bot.accountConfig) {
+        setTimeout(() => {
+          createBot(bot.accountConfig);
+          console.log(`[Maintenance] Recreated bot ${botName}`);
+          socket.emit('maintenance-result', { message: `Reconnected ${botName}` });
+        }, 2000);
+      } else {
+        console.error(`[Maintenance] No stored config for ${botName}`);
+        socket.emit('maintenance-result', { message: `Reconnect failed: config missing` });
+      }
+    } else {
+      console.warn(`[Maintenance] Unknown action: ${action}`);
+      socket.emit('maintenance-result', { message: `Unknown action: ${action}` });
+    }
+  });
 });
 
 // Start everything
