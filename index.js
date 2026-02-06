@@ -157,8 +157,8 @@ function createBot(accountConfig) {
     version: cfgBot.version,
     username: accountConfig.username,
     auth: accountConfig.auth,
-    skipValidation: true
-    // compress: false, // Uncomment if compression causes issues
+    skipValidation: true,
+    // compress: false, // Uncomment if compression issues occur
   };
 
   if (accountConfig.proxy) {
@@ -178,6 +178,7 @@ function createBot(accountConfig) {
   }
 
   const bot = mineflayer.createBot(botOptions);
+  bot.loadPlugin(pathfinder.pathfinder);
   bot.sessionStart = Date.now();
   bots[accountConfig.username] = bot;
   bot.shards = null;
@@ -240,6 +241,9 @@ function createBot(accountConfig) {
       }, 5000);
     }
 
+	// Load autoFarm plugin
+    require('./plugins/autoFarm')(bot);
+
     broadcastBotsStatus();
 
     // Initial /shards query after login delay
@@ -249,6 +253,7 @@ function createBot(accountConfig) {
         logger.info(`[SHARDS] Login query sent for ${bot.username || accountConfig.username}`);
       }
     }, 8000);
+  });
 
   bot.on('death', () => {
     if (cfg.plugins && cfg.plugins.autoRespawn) {
@@ -286,7 +291,7 @@ function createBot(accountConfig) {
 
   setInterval(() => {
     if (bot?.entity) {
-    //bot.chat('/shards');
+      bot.chat('/shards');
       logger.info(`[SHARDS] 3-hour query sent for ${bot.username || accountConfig.username}`);
     }
   }, 3 * 60 * 60 * 1000);
