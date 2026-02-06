@@ -61,7 +61,7 @@ function broadcastBotsStatus() {
       food: bot?.food ?? 'N/A',
       dimension: bot?.game?.dimension ?? 'N/A',
       position: bot?.entity?.position ? `${Math.floor(bot.entity.position.x)}, ${Math.floor(bot.entity.position.y)}, ${Math.floor(bot.entity.position.z)}` : 'N/A',
-      proxy: bot?.options?.agent ? 'Yes' : 'No',
+      proxy: bot?.hasProxy ? 'Yes' : 'No',
       viewerPort: bot?.viewerPort || null,
       viewerRunning: bot?.viewerRunning || false,
       isAfkFarming: bot?.isAfkFarming || false
@@ -171,6 +171,7 @@ function createBot(accountConfig) {
     username: accountConfig.username,
     auth: accountConfig.auth,
     skipValidation: true,
+    compress: false, // Critical for Webshare proxies
   };
 
   if (accountConfig.proxy) {
@@ -182,6 +183,7 @@ function createBot(accountConfig) {
         retries: 3
       });
       logger.info(`Proxy enabled for ${accountConfig.username}: ${accountConfig.proxy}`);
+	  bot.hasProxy = true;
     } catch (proxyErr) {
       logger.error(`Failed to set proxy for ${accountConfig.username}: ${proxyErr.message}`);
     }
@@ -191,39 +193,23 @@ function createBot(accountConfig) {
 
   const bot = mineflayer.createBot(botOptions);
 
-  // Load pathfinder plugin
+  // Load pathfinder
   bot.loadPlugin(pathfinder.pathfinder);
   console.log('[Pathfinder] Loaded for', bot.username);
 
   bot.sessionStart = Date.now();
   bots[accountConfig.username] = bot;
-  bot.accountConfig = accountConfig; // Store for reconnect
+  bot.accountConfig = accountConfig;
   bot.shards = null;
   bot.keys = null;
-  bot.isAfkFarming = false; // For dashboard label
-  
-  // === EARLY LISTENER FOR TELEPORT CONFIRMATION ===
-  // Register BEFORE spawn so we catch messages that arrive very early
-  bot.on('message', function earlyAfkCheck(jsonMsg) {
-    const text = jsonMsg.toString().trim().toLowerCase();
-    console.log('[EarlyAfkCheck] Raw message:', text);
-
-    if (text.includes('you teleported to the ᴀꜰᴋ')) {
-      logger.success('[EarlyAfkCheck] Caught "you teleported to the ᴀꜰᴋ" — AFK confirmed early');
-      bot.isAfkFarming = true;
-      broadcastBotsStatus(); // Update dashboard with green label
-
-      // Optional: remove this early listener after confirmation
-      bot.off('message', earlyAfkCheck);
-    }
-  });
+  bot.isAfkFarming = false;
 
   // Viewer setup
   bot.viewerPort = 3001 + Object.keys(bots).length - 1;
   bot.viewerRunning = false;
   bot.viewerInstance = null;
 
-  // Chat parser for shards AND keys
+  // Chat parser for shards/keys
   bot.on('message', (jsonMsg) => {
     const text = jsonMsg.toString().trim().toLowerCase();
     console.log('[CHAT RAW]', text);
@@ -256,15 +242,26 @@ function createBot(accountConfig) {
     }
   });
 
+  // EARLY AFK LISTENER (catches messages before spawn)
+  bot.on('message', function earlyAfkCheck(jsonMsg) {
+    const text = jsonMsg.toString().trim().toLowerCase();
+    if (text.includes('you teleported to the ᴀꜰᴋ')) {
+      logger.success('[Early] Caught "you teleported to the ᴀꜰᴋ" — AFK confirmed');
+      bot.isAfkFarming = true;
+      broadcastBotsStatus();
+      bot.off('message', earlyAfkCheck);
+    }
+  });
+
   bot.once('spawn', () => {
     logger.success(`Bot ${bot.username} spawned`);
 
-    // Load plugins immediately
+    // Load plugins
     if (cfg.plugins && cfg.plugins.antiAfk) antiAfk(bot);
     if (cfg.plugins && cfg.plugins.randomMove) randomMove(bot);
     if (cfg.plugins && cfg.plugins.chatLogger) chatLogger(bot);
 
-    // Load autoFarm plugin (movement after warp)
+    // Load autoFarm (movement + shard logic)
     require('./plugins/autoFarm')(bot);
 
     // Auto-lobby / warp
@@ -278,7 +275,6 @@ function createBot(accountConfig) {
 
     broadcastBotsStatus();
 
-    // Initial /shards query
     setTimeout(() => {
       if (bot.entity) {
         logger.info(`[SHARDS] Login query sent for ${bot.username || accountConfig.username}`);
@@ -377,60 +373,41 @@ io.on('connection', socket => {
     targetBot.chat(data.message.trim());
   });
 
-  // Viewer controls
   socket.on('startViewer', (data) => {
     console.log(`[Socket] startViewer requested for ${data.username}`);
     const bot = bots[data.username];
-    if (bot) {
-      startViewerForBot(bot);
-    } else {
-      console.warn(`[Socket] Bot not found: ${data.username}`);
-    }
+    if (bot) startViewerForBot(bot);
   });
 
   socket.on('stopViewer', (data) => {
     console.log(`[Socket] stopViewer requested for ${data.username}`);
     const bot = bots[data.username];
-    if (bot) {
-      stopViewerForBot(bot);
-    } else {
-      console.warn(`[Socket] Bot not found: ${data.username}`);
-    }
+    if (bot) stopViewerForBot(bot);
   });
 
-  // Maintenance (disconnect/reconnect)
   socket.on('maintenance', (data) => {
     const action = data.action;
     const botName = data.bot;
     console.log(`[Maintenance] ${action} requested for ${botName}`);
-
     const bot = bots[botName];
     if (!bot) {
       console.warn(`[Maintenance] Bot not found: ${botName}`);
       socket.emit('maintenance-result', { message: `Bot ${botName} not found` });
       return;
     }
-
     if (action === 'disconnect') {
-      console.log(`[Maintenance] Disconnecting bot ${botName}`);
       bot.end();
       socket.emit('maintenance-result', { message: `Disconnected ${botName}` });
     } else if (action === 'reconnect') {
-      console.log(`[Maintenance] Reconnecting bot ${botName}`);
       bot.end();
       if (bot.accountConfig) {
         setTimeout(() => {
           createBot(bot.accountConfig);
-          console.log(`[Maintenance] Recreated bot ${botName}`);
           socket.emit('maintenance-result', { message: `Reconnected ${botName}` });
         }, 2000);
       } else {
-        console.error(`[Maintenance] No stored config for ${botName}`);
         socket.emit('maintenance-result', { message: `Reconnect failed: config missing` });
       }
-    } else {
-      console.warn(`[Maintenance] Unknown action: ${action}`);
-      socket.emit('maintenance-result', { message: `Unknown action: ${action}` });
     }
   });
 });
