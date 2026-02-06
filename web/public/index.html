@@ -184,8 +184,9 @@
         <div class="bot-header">
           <div class="status-dot ${bot.online ? 'online' : 'offline'}"></div>
           <h3>${bot.minecraftUsername || configName}</h3>
+		  ${bot.isAfkFarming ? '<span style="color: #00ff00; font-weight: bold; margin-left: 10px;">AFK Farming</span>' : ''}
         </div>
-        <div class="stat-line"><span class="label">Config:</span> ${configName}</div>
+        <div class="stat-line"><span class="label">Email:</span> ${configName}</div>
         <div class="stat-line"><span class="label">Status:</span> ${bot.online ? '🟢 Online' : '🔴 Offline'}</div>
         <div class="stat-line"><span class="label">Shards:</span> ${bot.shards}</div>
         <div class="stat-line"><span class="label">Uptime:</span> ${formatUptime(bot.uptime)}</div>
@@ -267,6 +268,11 @@
     chatArea.appendChild(msgDiv);
     chatArea.scrollTop = chatArea.scrollHeight;
   });
+  
+  socket.on('maintenance-result', (data) => {
+  alert(data.message); // or show in a toast/div
+  console.log('[Dashboard] Maintenance result:', data.message);
+ });
 
   // Global chat send
   document.getElementById('global-chat-form').addEventListener('submit', (e) => {

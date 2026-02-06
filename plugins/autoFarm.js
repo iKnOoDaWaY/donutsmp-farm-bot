@@ -45,6 +45,25 @@ module.exports = (bot) => {
         }, 500); // small delay so it starts moving first
 
       }, delayMs);
+	  
+	  // Detect warp to AFK spot confirmation
+  if (text.includes('you teleported to the ᴀꜰᴋ')) {
+    logger.success('[AutoFarm] Confirmed: Teleported to AFK spot');
+    bot.isAfkFarming = true; // Flag that farming is active
+
+    // Optional: Update dashboard immediately
+    broadcastBotsStatus(); // If this function is global
+  }
+});
+
+// After the jump in your pathfinding timeout
+setTimeout(() => {
+  bot.setControlState('jump', true);
+  setTimeout(() => bot.setControlState('jump', false), 300);
+  logger.info('[AutoFarm] Performed one jump');
+
+  // Now listen for the teleport confirmation (already set up above)
+}, 500);
     }
   });
 };
