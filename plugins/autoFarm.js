@@ -70,7 +70,7 @@ module.exports = (bot) => {
   });
 
   bot.on('path_update', (r) => {
-    logger.info(`[AutoFarm] Path status: ${r.status} - ${r.visitedNodes} nodes`);
+    //logger.info(`[AutoFarm] Path status: ${r.status} - ${r.visitedNodes} nodes`);
     if (r.status === 'noPath') {
       logger.warn('[AutoFarm] NO PATH FOUND — check if spot is reachable');
     }
