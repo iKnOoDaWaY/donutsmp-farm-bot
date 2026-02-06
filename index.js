@@ -72,8 +72,19 @@ function broadcastBotsStatus() {
  * Start viewer for a bot
  */
 function startViewerForBot(bot) {
-  if (bot.viewerRunning) return;
-  bot.waitForChunksToLoad(() => {
+  if (bot.viewerRunning) {
+    console.log(`[VIEWER] Already running for ${bot.username} (port ${bot.viewerPort})`);
+    return;
+  }
+
+  console.log(`[VIEWER] Attempting to start viewer for ${bot.username} on port ${bot.viewerPort}`);
+
+  let started = false;
+
+  const forceStart = () => {
+    if (started) return;
+    started = true;
+    console.log(`[VIEWER] Chunk timeout — forcing viewer start`);
     try {
       const viewer = mineflayerViewer(bot, {
         port: bot.viewerPort,
@@ -82,10 +93,36 @@ function startViewerForBot(bot) {
       });
       bot.viewerInstance = viewer;
       bot.viewerRunning = true;
-      logger.success(`[VIEWER] Started for ${bot.username} on http://localhost:${bot.viewerPort}`);
+      console.log(`[VIEWER] Forced start success on http://localhost:${bot.viewerPort}`);
       broadcastBotsStatus();
     } catch (err) {
-      logger.error(`[VIEWER] Failed to start for ${bot.username}: ${err.message}`);
+      console.error(`[VIEWER] Forced start failed:`, err.message);
+      console.error(err.stack);
+      bot.viewerRunning = false;
+    }
+  };
+
+  const timeoutId = setTimeout(forceStart, 15000); // 15s fallback
+
+  bot.waitForChunksToLoad(() => {
+    clearTimeout(timeoutId);
+    if (started) return;
+    started = true;
+    console.log(`[VIEWER] Chunks loaded — normal start`);
+    try {
+      const viewer = mineflayerViewer(bot, {
+        port: bot.viewerPort,
+        firstPerson: false,
+        viewDistance: 6
+      });
+      bot.viewerInstance = viewer;
+      bot.viewerRunning = true;
+      console.log(`[VIEWER] Normal start success on http://localhost:${bot.viewerPort}`);
+      broadcastBotsStatus();
+    } catch (err) {
+      console.error(`[VIEWER] Normal start failed:`, err.message);
+      console.error(err.stack);
+      bot.viewerRunning = false;
     }
   });
 }
@@ -113,6 +150,7 @@ function createBot(accountConfig) {
   const cfgBot = serverConfig.server;
   const cfg = getConfig();
   logger.info(`Starting bot for ${accountConfig.username}…`);
+
   const botOptions = {
     host: cfgBot.host,
     port: cfgBot.port,
@@ -120,8 +158,9 @@ function createBot(accountConfig) {
     username: accountConfig.username,
     auth: accountConfig.auth,
     skipValidation: true
-	//compress: false,
+    // compress: false, // Uncomment if compression causes issues
   };
+
   if (accountConfig.proxy) {
     try {
       botOptions.agent = new SocksProxyAgent(accountConfig.proxy, {
@@ -137,11 +176,13 @@ function createBot(accountConfig) {
   } else {
     logger.info(`No proxy for ${accountConfig.username} — direct connection`);
   }
+
   const bot = mineflayer.createBot(botOptions);
   bot.sessionStart = Date.now();
   bots[accountConfig.username] = bot;
   bot.shards = null;
   bot.keys = null;
+
   // Viewer setup (off by default)
   bot.viewerPort = 3001 + Object.keys(bots).length - 1;
   bot.viewerRunning = false;
@@ -151,6 +192,7 @@ function createBot(accountConfig) {
   bot.on('message', (jsonMsg) => {
     const text = jsonMsg.toString().trim().toLowerCase();
     console.log('[CHAT RAW]', text);
+
     // Shard detection
     const shardRegex = /(?:your\s*shards\s*[:=-]\s*|shards\s*[:=-]\s*|\b)([\d.]+)([kmb]?)/i;
     const shardMatch = text.match(shardRegex);
@@ -169,6 +211,7 @@ function createBot(accountConfig) {
         return;
       }
     }
+
     // Key detection
     const keyRegex = /(?:received|got|claimed|earned)\s*(\d+)\s*(?:crate\s*key|key)/i;
     const keyMatch = text.match(keyRegex);
@@ -180,105 +223,32 @@ function createBot(accountConfig) {
     }
   });
 
-bot.once('spawn', () => {
-  logger.success(`Bot ${bot.username} spawned`);
+  bot.once('spawn', () => {
+    logger.success(`Bot ${bot.username} spawned`);
 
-  // Load plugins immediately
-  if (cfg.plugins && cfg.plugins.antiAfk) antiAfk(bot);
-  if (cfg.plugins && cfg.plugins.randomMove) randomMove(bot);
-  if (cfg.plugins && cfg.plugins.chatLogger) chatLogger(bot);
+    // Load plugins immediately
+    if (cfg.plugins && cfg.plugins.antiAfk) antiAfk(bot);
+    if (cfg.plugins && cfg.plugins.randomMove) randomMove(bot);
+    if (cfg.plugins && cfg.plugins.chatLogger) chatLogger(bot);
 
-  // Auto-lobby / warp
-  if (cfg.plugins && cfg.plugins.autoLobby) {
-    setTimeout(() => autoLobby(bot), 2000);
-  } else if (cfg.plugins && cfg.plugins.autoSpawnCommand) {
+    // Auto-lobby / warp
+    if (cfg.plugins && cfg.plugins.autoLobby) {
+      setTimeout(() => autoLobby(bot), 2000);
+    } else if (cfg.plugins && cfg.plugins.autoSpawnCommand) {
+      setTimeout(() => {
+        bot.chat('/warp afk');
+      }, 5000);
+    }
+
+    broadcastBotsStatus();
+
+    // Initial /shards query after login delay
     setTimeout(() => {
-      bot.chat('/warp afk');
-    }, 5000);
-  }
-
-  broadcastBotsStatus();
-
-  // Initial /shards query after login delay
-  setTimeout(() => {
-    if (bot.entity) {
-      // bot.chat('/shards'); // still commented
-      logger.info(`[SHARDS] Login query sent for ${bot.username || accountConfig.username}`);
-    }
-  }, 8000);
-
-  // Sidebar reading — retry until we get lines
-  const sidebarCheck = setInterval(() => {
-    let sidebar = null;
-    for (const objName in bot.scoreboard) {
-      if (bot.scoreboard[objName] && bot.scoreboard[objName].itemsMap) {
-        sidebar = bot.scoreboard[objName];
-        break;
+      if (bot.entity) {
+        // bot.chat('/shards'); // still commented
+        logger.info(`[SHARDS] Login query sent for ${bot.username || accountConfig.username}`);
       }
-    }
-
-    if (sidebar) {
-      console.log('Sidebar objective found:', sidebar.name || 'DONUT SMP');
-
-      // Clean title (handle chat component)
-      const titleRaw = sidebar.title ? (sidebar.title.toString ? sidebar.title.toString() : JSON.stringify(sidebar.title)) : 'No title';
-      const titleClean = titleRaw.replace(/§./g, '').replace(/\[object Object\]/g, '').trim();
-      console.log('Sidebar title (clean):', titleClean || '(empty)');
-
-      // Get lines
-      const lines = Object.values(sidebar.itemsMap || {})
-        .sort((a, b) => b.value - a.value)
-        .map(item => item.displayName || item.name || 'DONUT SMP');
-
-      if (lines.length > 0) {
-        console.log('Sidebar lines:', lines);
-        clearInterval(sidebarCheck); // Stop once we have data
-
-        // Parse useful values (example)
-        lines.forEach(line => {
-          const clean = line.replace(/§./g, '').trim();
-          console.log('Clean line:', clean);
-
-          // Shards example
-          if (clean.includes('Shards')) {
-            const match = clean.match(/Shards\s*([\d,.]+[KMB]?)/i);
-            if (match) {
-              let val = parseFloat(match[1].replace(',', ''));
-              if (match[1].toUpperCase().endsWith('K')) val *= 1000;
-              if (match[1].toUpperCase().endsWith('M')) val *= 1000000;
-              bot.shards = Math.round(val);
-              console.log(`Parsed shards: ${bot.shards}`);
-            }
-          }
-
-          // Money example
-          if (clean.includes('Money')) {
-            const match = clean.match(/Money\s*\$?\s*([\d,.]+[KMB]?)/i);
-            if (match) {
-              let val = parseFloat(match[1].replace(',', ''));
-              if (match[1].toUpperCase().endsWith('K')) val *= 1000;
-              if (match[1].toUpperCase().endsWith('M')) val *= 1000000;
-              bot.money = Math.round(val);
-              console.log(`Parsed money: $${bot.money}`);
-            }
-          }
-
-          // Add more parsers for Kills, Deaths, Playtime, etc. as needed
-        });
-      } else {
-        console.log('Sidebar found but no lines yet — retrying...');
-      }
-    } else {
-      console.log('No scoreboard objective found yet — retrying...');
-    }
-  }, 3000); // Check every 3 seconds
-
-  // Stop checking after 60 seconds max
-  setTimeout(() => {
-    clearInterval(sidebarCheck);
-    console.log('Sidebar check timed out after 60s');
-  }, 60000);
-});
+    }, 8000);
 
   bot.on('death', () => {
     if (cfg.plugins && cfg.plugins.autoRespawn) {
@@ -316,7 +286,7 @@ bot.once('spawn', () => {
 
   setInterval(() => {
     if (bot?.entity) {
-      bot.chat('/shards');
+    //bot.chat('/shards');
       logger.info(`[SHARDS] 3-hour query sent for ${bot.username || accountConfig.username}`);
     }
   }, 3 * 60 * 60 * 1000);
@@ -355,8 +325,9 @@ function startBots() {
   });
 }
 
-// Socket.io connection handling (single block)
+// Socket.io connection handling
 io.on('connection', socket => {
+  console.log(`[Socket] New client connected: ${socket.id}`);
   broadcastBotsStatus();
 
   socket.on('sendMessage', data => {
@@ -371,7 +342,7 @@ io.on('connection', socket => {
   });
 
   // Viewer controls
-	socket.on('startViewer', (data) => {
+  socket.on('startViewer', (data) => {
     console.log(`[Socket] startViewer requested for ${data.username}`);
     const bot = bots[data.username];
     if (bot) {
@@ -381,7 +352,7 @@ io.on('connection', socket => {
     }
   });
 
-    socket.on('stopViewer', (data) => {
+  socket.on('stopViewer', (data) => {
     console.log(`[Socket] stopViewer requested for ${data.username}`);
     const bot = bots[data.username];
     if (bot) {
