@@ -199,7 +199,7 @@ function createBot(accountConfig) {
 
   // Load pathfinder plugin (required for GoalBlock / setGoal)
   bot.loadPlugin(pathfinder.pathfinder);
-
+  bot.accountConfig = accountConfig;
   bot.sessionStart = Date.now();
   bots[accountConfig.username] = bot;
   bot.shards = null;
@@ -385,7 +385,7 @@ io.on('connection', socket => {
     }
   });
   
-  socket.on('maintenance', (data) => {
+socket.on('maintenance', (data) => {
   const action = data.action;
   const botName = data.bot;
   console.log(`[Maintenance] Received ${action} request for bot ${botName}`);
@@ -399,17 +399,23 @@ io.on('connection', socket => {
 
   if (action === 'disconnect') {
     console.log(`[Maintenance] Disconnecting bot ${botName}`);
-    bot.end(); // Clean disconnect
+    bot.end();
     socket.emit('maintenance-result', { message: `Disconnected ${botName}` });
   } else if (action === 'reconnect') {
     console.log(`[Maintenance] Reconnecting bot ${botName}`);
     bot.end(); // End current connection
-    // autoReconnect plugin should handle recreation if enabled
-    // Or manually recreate:
-    setTimeout(() => {
-      createBot({ username: botName, ... }); // adjust with your account config
-    }, 2000);
-    socket.emit('maintenance-result', { message: `Reconnecting ${botName}` });
+
+    // Recreate using stored config
+    if (bot.accountConfig) {
+      setTimeout(() => {
+        createBot(bot.accountConfig);
+        console.log(`[Maintenance] Recreated bot ${botName}`);
+        socket.emit('maintenance-result', { message: `Reconnected ${botName}` });
+      }, 2000); // small delay to let old connection clean up
+    } else {
+      console.error(`[Maintenance] No stored config for ${botName} — cannot reconnect`);
+      socket.emit('maintenance-result', { message: `Cannot reconnect ${botName}: config missing` });
+    }
   } else {
     console.warn(`[Maintenance] Unknown action: ${action}`);
     socket.emit('maintenance-result', { message: `Unknown action: ${action}` });
